@@ -45,7 +45,7 @@ async function boot() {
   renderFooter();
 
   initBrickWall();
-  initTitleSpans();
+  initWorkshopTitle();
   /* initCardScrambles() and initCardFlicker() re-enable with renderPortals() */
   initStatusBar();
 }
@@ -504,15 +504,308 @@ window.addEventListener('resize', () => {
 });
 
 /* ============================================================
-   TITLE — ARCAEGIUM color chaos spans
+   WORKSHOP TITLE — animated mechanical canvas
+   W O R K S H O P
+   O1: brass gear CW   O2: brass gear CCW
+   S:  sinusoidal chain through two stacked gears
+   P:  iron bowl gear + ratchet pawl leg
+   W:  text + small crank above inner valley
+   R K H: static text
    ============================================================ */
-function initTitleSpans() {
-  const el = document.getElementById('mainTitle');
-  'ARCAEGIUM'.split('').forEach(ch => {
-    const s = document.createElement('span');
-    s.className   = 'tc';
-    s.textContent = ch;
-    el.appendChild(s);
+function initWorkshopTitle() {
+  const h1 = document.getElementById('mainTitle');
+  if (!h1) return;
+
+  const cv = document.createElement('canvas');
+  cv.id = 'titleCanvas';
+  cv.style.cssText = 'display:block;width:100%;';
+  h1.replaceWith(cv);
+
+  let raf = null;
+
+  function run() {
+    if (raf) { cancelAnimationFrame(raf); raf = null; }
+
+    const W  = (cv.parentElement || document.body).clientWidth || 800;
+    const FS = Math.min(Math.round(W * 0.086), 104);
+    const CH = Math.round(FS * 2.05);
+    cv.width  = W;
+    cv.height = CH;
+    const ctx = cv.getContext('2d');
+
+    /* ── palette ── */
+    const BR   = '#c8860a';
+    const BR_L = '#e0a830';
+    const BR_D = '#7a4e06';
+    const IR   = '#2c2218';
+    const IR_L = '#483c30';
+    const TX   = '#f0e4c8';
+
+    /* ── letter layout ── */
+    ctx.font = `900 ${FS}px Orbitron, monospace`;
+    const WORD = 'WORKSHOP';
+    const GAP  = FS * 0.055;
+    const lms  = WORD.split('').map(ch => ({ ch, w: ctx.measureText(ch).width }));
+    const totW = lms.reduce((s, l) => s + l.w + GAP, -GAP);
+    let xc = (W - totW) / 2;
+    lms.forEach(l => { l.x = xc; l.cx = xc + l.w / 2; xc += l.w + GAP; });
+
+    const BASELINE = CH * 0.83;
+    const CAP_Y    = BASELINE - FS * 0.86;
+
+    /* letter refs */
+    const [lW, lO1, lR, lK, lS, lH, lO2, lP] = lms;
+
+    /* gear sizes */
+    const O_R  = FS * 0.40;
+    const O_Y  = BASELINE - O_R - 1;
+    const P_R  = FS * 0.26;
+    const P_CX = lP.x + lP.w * 0.60;
+    const P_Y  = CAP_Y + (BASELINE - CAP_Y) * 0.30;
+    const S_R  = FS * 0.14;
+    const SH   = BASELINE - CAP_Y;
+    const SG1Y = CAP_Y + SH * 0.28;
+    const SG2Y = CAP_Y + SH * 0.72;
+    const S_AMP = lS.w * 0.44;
+    const P_TEETH = 10;
+
+    /* ── helpers ── */
+    function drawGear(cx, cy, R, teeth, ang, col, rimCol) {
+      const iR = R * 0.65, hR = R * 0.27;
+      ctx.beginPath();
+      for (let i = 0; i < teeth * 2; i++) {
+        const a = (i / (teeth * 2)) * Math.PI * 2 + ang;
+        const r = i % 2 === 0 ? R : iR;
+        i === 0
+          ? ctx.moveTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r)
+          : ctx.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+      }
+      ctx.closePath();
+      ctx.fillStyle = col; ctx.fill();
+      if (rimCol) { ctx.strokeStyle = rimCol; ctx.lineWidth = 1.5; ctx.stroke(); }
+      ctx.strokeStyle = IR; ctx.lineWidth = Math.max(2, R * 0.085); ctx.lineCap = 'round';
+      for (let i = 0; i < 4; i++) {
+        const a = i * Math.PI * 0.5 + ang;
+        ctx.beginPath();
+        ctx.moveTo(cx + Math.cos(a) * hR * 1.1, cy + Math.sin(a) * hR * 1.1);
+        ctx.lineTo(cx + Math.cos(a) * iR * 0.82, cy + Math.sin(a) * iR * 0.82);
+        ctx.stroke();
+      }
+      ctx.beginPath(); ctx.arc(cx, cy, hR, 0, Math.PI * 2);
+      ctx.fillStyle = IR; ctx.fill();
+      ctx.beginPath(); ctx.arc(cx, cy, hR * 0.42, 0, Math.PI * 2);
+      ctx.fillStyle = IR_L; ctx.fill();
+    }
+
+    function pLen(pts) {
+      let l = 0;
+      for (let i = 1; i < pts.length; i++)
+        l += Math.hypot(pts[i].x - pts[i-1].x, pts[i].y - pts[i-1].y);
+      return l;
+    }
+
+    function ptAt(pts, d) {
+      let acc = 0;
+      for (let i = 1; i < pts.length; i++) {
+        const seg = Math.hypot(pts[i].x - pts[i-1].x, pts[i].y - pts[i-1].y);
+        if (acc + seg >= d) {
+          const t = (d - acc) / seg;
+          return {
+            x: pts[i-1].x + (pts[i].x - pts[i-1].x) * t,
+            y: pts[i-1].y + (pts[i].y - pts[i-1].y) * t,
+            a: Math.atan2(pts[i].y - pts[i-1].y, pts[i].x - pts[i-1].x)
+          };
+        }
+        acc += seg;
+      }
+      const n = pts.length - 1;
+      return { ...pts[n], a: Math.atan2(pts[n].y - pts[n-1].y, pts[n].x - pts[n-1].x) };
+    }
+
+    function arcPts(cx, cy, r, a1, a2, n) {
+      const pts = [];
+      for (let i = 0; i <= n; i++) {
+        const a = a1 + (a2 - a1) * i / n;
+        pts.push({ x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r });
+      }
+      return pts;
+    }
+
+    function drawChain(pts, phase, linkL, bright) {
+      const total = pLen(pts);
+      if (total < 1) return;
+      const PITCH  = linkL * 2.5;
+      const offset = ((phase * PITCH) % PITCH + PITCH) % PITCH;
+      for (let d = offset; d < total - linkL * 0.4; d += PITCH) {
+        const p = ptAt(pts, d);
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.a);
+        const hw = linkL * 0.52, hh = linkL * 0.28;
+        ctx.fillStyle = bright ? BR_D : IR;
+        ctx.fillRect(-hw - 1, -hh - 1, hw * 2 + 2, hh * 2 + 2);
+        ctx.fillStyle = bright ? BR : IR_L;
+        ctx.fillRect(-hw, -hh, hw * 2, hh * 2);
+        const pinR = hh * 0.32;
+        ctx.fillStyle = bright ? BR_D : IR;
+        ctx.beginPath(); ctx.arc(-hw + hh, 0, pinR, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(hw - hh, 0, pinR, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    /* ── path builders (precomputed) ── */
+
+    /* main chain: runs at O_Y height, arcs OVER both O gears */
+    const CR = O_R + FS * 0.035;
+    const mainChainPts = [
+      { x: 0, y: O_Y },
+      { x: lO1.cx - CR, y: O_Y },
+      ...arcPts(lO1.cx, O_Y, CR, Math.PI, Math.PI * 2, 28),
+      { x: lO2.cx - CR, y: O_Y },
+      ...arcPts(lO2.cx, O_Y, CR, Math.PI, Math.PI * 2, 28),
+      { x: W, y: O_Y },
+    ];
+
+    /* O2 → P bowl short chain */
+    const o2px1 = lO2.cx + CR * 0.62, o2py1 = O_Y + CR * 0.72;
+    const o2px2 = P_CX - P_R - 3,    o2py2 = P_Y;
+    const o2pPts = [];
+    for (let i = 0; i <= 22; i++) {
+      o2pPts.push({
+        x: o2px1 + (o2px2 - o2px1) * i / 22,
+        y: o2py1 + (o2py2 - o2py1) * i / 22,
+      });
+    }
+
+    /* S: sinusoidal chain from top to bottom of S letter space */
+    const sy1 = CAP_Y + SH * 0.06;
+    const sy2 = BASELINE - SH * 0.04;
+    const sPts = [];
+    for (let i = 0; i <= 72; i++) {
+      const t = i / 72;
+      sPts.push({
+        x: lS.cx + S_AMP * Math.sin(t * Math.PI * 2 + Math.PI),
+        y: sy1 + (sy2 - sy1) * t,
+      });
+    }
+
+    const LINK_L = FS * 0.052;
+
+    /* ── crank setup ── */
+    const WCR = FS * 0.072;
+    const WCX = lW.cx + lW.w * 0.04;
+    const WCY = CAP_Y - WCR * 1.3;
+
+    /* ── ratchet pawl angle ── */
+    function pawlAng(gAng) {
+      const cycle = (Math.PI * 2) / P_TEETH;
+      const ph    = (((gAng % cycle) + cycle) % cycle) / cycle;
+      return ph < 0.72
+        ? (ph / 0.72) * 0.30
+        : 0.30 * (1 - (ph - 0.72) / 0.28);
+    }
+
+    /* ── frame ── */
+    function frame(ts) {
+      ctx.clearRect(0, 0, W, CH);
+
+      const t   = ts * 0.001;
+      const ω   = 0.34;
+      const o1A =  t * ω;
+      const o2A = -t * ω;
+      const pA  = -t * ω * (O_R / P_R);
+      const sA1 =  t * ω * 2.2;
+      const sA2 = -t * ω * 2.2;
+      const crA =  t * 1.05;
+
+      const mPh  = (t * O_R * ω) % LINK_L;
+      const sPh  = (t * S_R * ω * 2.2) % LINK_L;
+      const o2Ph = mPh;
+
+      /* main chain */
+      drawChain(mainChainPts, mPh, LINK_L, false);
+
+      /* O2 → P chain */
+      drawChain(o2pPts, o2Ph, LINK_L * 0.72, false);
+
+      /* W crank */
+      ctx.beginPath(); ctx.arc(WCX, WCY, WCR, 0, Math.PI * 2);
+      ctx.fillStyle = IR; ctx.fill();
+      ctx.beginPath(); ctx.arc(WCX, WCY, WCR * 0.52, 0, Math.PI * 2);
+      ctx.fillStyle = IR_L; ctx.fill();
+      const cpx = WCX + Math.cos(crA) * WCR * 0.56;
+      const cpy = WCY + Math.sin(crA) * WCR * 0.56;
+      ctx.beginPath(); ctx.arc(cpx, cpy, WCR * 0.20, 0, Math.PI * 2);
+      ctx.fillStyle = BR; ctx.fill();
+      const wvY = BASELINE - FS * 0.07;
+      ctx.strokeStyle = IR_L; ctx.lineWidth = WCR * 0.36; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(cpx, cpy); ctx.lineTo(WCX, wvY); ctx.stroke();
+      ctx.strokeStyle = BR_D; ctx.lineWidth = WCR * 0.13;
+      ctx.beginPath(); ctx.moveTo(cpx, cpy); ctx.lineTo(WCX, wvY); ctx.stroke();
+
+      /* S chain + gears */
+      drawChain(sPts, sPh, LINK_L * 0.70, true);
+      drawGear(lS.cx, SG1Y, S_R, 8, sA1, BR, BR_D);
+      drawGear(lS.cx, SG2Y, S_R, 8, sA2, BR, BR_D);
+
+      /* O1 */
+      drawGear(lO1.cx, O_Y, O_R, 12, o1A, BR, BR_D);
+
+      /* O2 */
+      drawGear(lO2.cx, O_Y, O_R, 12, o2A, BR, BR_D);
+
+      /* P: stem + bowl gear + pawl */
+      const stW = FS * 0.115;
+      ctx.fillStyle = TX;
+      ctx.shadowColor = 'rgba(200,136,10,0.3)'; ctx.shadowBlur = FS * 0.08;
+      ctx.fillRect(lP.x, CAP_Y, stW, BASELINE - CAP_Y);
+      ctx.shadowBlur = 0;
+      /* horizontal bridge from stem to bowl */
+      ctx.fillStyle = TX;
+      ctx.fillRect(lP.x + stW, P_Y - stW * 0.5, P_CX - P_R * 0.7 - (lP.x + stW), stW);
+      /* bowl gear */
+      drawGear(P_CX, P_Y, P_R, P_TEETH, pA, IR_L, BR_D);
+      /* pawl */
+      const paw = pawlAng(pA);
+      ctx.save();
+      ctx.translate(lP.x + stW, P_Y);
+      ctx.rotate(-paw);
+      ctx.fillStyle = IR_L; ctx.strokeStyle = BR; ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(0, -FS * 0.038);
+      ctx.lineTo(P_R * 0.50, -FS * 0.018);
+      ctx.lineTo(P_R * 0.48, FS * 0.048);
+      ctx.lineTo(0,  FS * 0.038);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      ctx.restore();
+
+      /* text letters — drawn last so they sit on top of chain */
+      ctx.font = `900 ${FS}px Orbitron, monospace`;
+      ctx.textBaseline = 'alphabetic';
+      ctx.textAlign    = 'left';
+      ctx.fillStyle    = TX;
+      ctx.shadowColor  = 'rgba(200,136,10,0.38)';
+      ctx.shadowBlur   = FS * 0.10;
+      ctx.fillText('W', lW.x, BASELINE);
+      ctx.fillText('R', lR.x, BASELINE);
+      ctx.fillText('K', lK.x, BASELINE);
+      ctx.fillText('H', lH.x, BASELINE);
+      ctx.shadowBlur = 0;
+
+      raf = requestAnimationFrame(frame);
+    }
+
+    raf = requestAnimationFrame(frame);
+  }
+
+  document.fonts.ready.then(run);
+
+  let _titleResizeT;
+  window.addEventListener('resize', () => {
+    clearTimeout(_titleResizeT);
+    _titleResizeT = setTimeout(() => { if (raf) cancelAnimationFrame(raf); run(); }, 160);
   });
 }
 
@@ -726,7 +1019,7 @@ function initStatusBar() {
     const d3digit      = Math.floor(Math.abs(d[2].pos)) % 10;
     const d4digit      = Math.floor(Math.abs(d[3].pos)) % 10;
 
-    entEl.textContent = `ENTROPY: ${sign}${intPart}.${d1digit}${d2digit}${d3digit}${d4digit} %`;
+    entEl.textContent = `FORGE-TEMP: ${sign}${intPart}.${d1digit}${d2digit}${d3digit}${d4digit} \u00b0C`;
   }, ec.update_interval_ms);
 
   function tick() {
@@ -734,8 +1027,8 @@ function initStatusBar() {
     timeEl.textContent = `${pad(now.getUTCHours())}:${pad(now.getUTCMinutes())}:${pad(now.getUTCSeconds())} UTC`;
     freq += (Math.random()-0.499)*0.004;
     if (Math.random()<0.015) ridx=(ridx+Math.floor(Math.random()*3-1))&0xFFFF;
-    freqEl.textContent = `DIM-FREQ: ${freq.toFixed(3)} THz`;
-    ridxEl.textContent = `REALITY-IDX: 0x${ridx.toString(16).toUpperCase().padStart(4,'0')}`;
+    freqEl.textContent = `BOILER-PSI: ${freq.toFixed(3)} bar`;
+    ridxEl.textContent = `MANIFEST-NO: #${ridx.toString(16).toUpperCase().padStart(4,'0')}`;
   }
   tick();
   setInterval(tick, 1000);
