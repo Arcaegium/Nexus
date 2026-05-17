@@ -17,21 +17,29 @@ const PALETTE = {
   ui:      { accent: '#7ab8e0', glow: 'rgba(122,184,224,0.15)' },
 };
 
+const CHAOS_COLS = [
+  [199,36,255], [57,255,110], [255,45,110],
+  [0,255,231],  [255,232,71], [255,154,69],
+];
+
 /* ── GLOBALS — populated after JSON load ── */
-let SITE    = {};   /* site-config.json */
-let PORTALS = [];   /* portals.json     */
+let CFG   = {};   /* effects-config.json */
+let SITE  = {};   /* site-config.json    */
+let PORTALS = []; /* portals.json        */
 
 /* ============================================================
-   BOOT — fetch JSON files then render
+   BOOT — fetch all three JSON files then render
    ============================================================ */
 async function boot() {
   try {
-    const [portalsRes, siteRes] = await Promise.all([
+    const [portalsRes, effectsRes, siteRes] = await Promise.all([
       fetch('content/portals.json'),
+      fetch('content/effects-config.json'),
       fetch('content/site-config.json'),
     ]);
     const portalsData = await portalsRes.json();
     PORTALS = Array.isArray(portalsData) ? portalsData : (portalsData.portals || []);
+    CFG     = await effectsRes.json();
     SITE    = await siteRes.json();
   } catch (e) {
     console.error('Arcaegium: failed to load content JSON', e);
@@ -40,13 +48,14 @@ async function boot() {
 
   applySiteMeta();
   renderHeader();
-  /* renderPortals() — hidden, re-enable when ready to show apparatus cards */
+  renderPortals();
   renderHudFooter();
   renderFooter();
 
-  initBrickWall();
+  initBackground();
   initTitleSpans();
-  /* initCardScrambles() and initCardFlicker() re-enable with renderPortals() */
+  initCardScrambles();
+  initCardFlicker();
   initStatusBar();
 }
 
@@ -77,7 +86,7 @@ function renderHeader() {
 }
 
 /* ============================================================
-   PORTAL CARDS — currently hidden
+   PORTAL CARDS
    ============================================================ */
 function renderPortals() {
   const container = document.getElementById('portalsContainer');
@@ -94,11 +103,13 @@ function renderPortals() {
 }
 
 function buildPortalCard(p, idx) {
+  /* resolve accent color */
   const colors = resolveAccent(p);
   const isUnknown = p.state === 'unknown';
   const isCycle   = p.accent_color_mode === 'cycle';
   const hasUrl    = p.url && p.url.trim() !== '';
 
+  /* wrapper — <a> if has url and resolvable, <div> otherwise */
   const el = document.createElement(hasUrl && !isUnknown ? 'a' : 'div');
   if (hasUrl && !isUnknown) el.href = p.url;
 
@@ -112,11 +123,13 @@ function buildPortalCard(p, idx) {
   el.dataset.unknown  = isUnknown ? 'true' : 'false';
   if (p.title) el.dataset.title = p.title;
 
+  /* apply accent CSS vars unless cycling (cycling handled by CSS animation) */
   if (!isCycle) {
     el.style.setProperty('--card-accent', colors.accent);
     el.style.setProperty('--card-glow',   colors.glow);
   }
 
+  /* stagger fade-in */
   el.style.animationDelay = `${1.0 + idx * 0.2}s`;
 
   el.innerHTML = `
@@ -143,6 +156,7 @@ function resolveAccent(p) {
   if (p.accent_color_mode === 'custom' && p.accent_color_hex) {
     return { accent: p.accent_color_hex, glow: hexToGlow(p.accent_color_hex) };
   }
+  /* cycle — CSS handles it, return fallback for non-color uses */
   return PALETTE.ui;
 }
 
@@ -162,6 +176,7 @@ function buildImagePanel(p) {
 }
 
 function hexToGlow(hex) {
+  /* convert #rrggbb to rgba with 0.22 alpha for glow */
   const r = parseInt(hex.slice(1,3),16);
   const g = parseInt(hex.slice(3,5),16);
   const b = parseInt(hex.slice(5,7),16);
@@ -187,321 +202,260 @@ function renderFooter() {
 }
 
 /* ============================================================
-   BRICK WALL BACKGROUND
-   Draws on #brickCanvas (position:fixed, sits above the video).
-   Transparent window holes let the video show through.
-   Canvas is redrawn on resize.
+   BACKGROUND: PARALLAX STARS + NEBULAE + SCANLINES + PINGS
    ============================================================ */
-function initBrickWall() {
-  const cv = document.getElementById('brickCanvas');
-  if (!cv) return;
+function initBackground() {
+  const sc = CFG.stars;
+  const sl = CFG.scanlines;
 
-  /* size the canvas to cover the full page — not just the viewport —
-     so the wall extends as portal cards are added below the fold */
-  const W = window.innerWidth;
-  const H = Math.max(window.innerHeight, document.documentElement.scrollHeight);
-  cv.width  = W;
-  cv.height = H;
+  const layerDefs = [
+    { id: 'layer0', count: sc.layer_far_count,  speed: sc.layer_far_parallax,  rMax: 0.9, aMax: 0.4 },
+    { id: 'layer1', count: sc.layer_mid_count,  speed: sc.layer_mid_parallax,  rMax: 1.2, aMax: 0.6 },
+    { id: 'layer2', count: sc.layer_near_count, speed: sc.layer_near_parallax, rMax: 1.8, aMax: 0.8 },
+  ];
 
-  const ctx = cv.getContext('2d');
-  ctx.clearRect(0, 0, W, H);
+  const layers = layerDefs.map(d => ({
+    ...d,
+    canvas: document.getElementById(d.id),
+    ctx: document.getElementById(d.id).getContext('2d'),
+    stars: [],
+  }));
 
-  /* ── position hash — deterministic per (x,y,salt) ── */
-  function ph(x, y, s) {
-    let h = ((x|0)*374761393 + (y|0)*1234567 + (s|0)*999983)|0;
-    h ^= h>>>13; h = Math.imul(h, 0xd3a0fd7b); h ^= h>>>17;
-    return (h>>>0) / 4294967296;
+  const fx    = document.getElementById('fxCanvas');
+  const fxCtx = fx.getContext('2d');
+
+  let W, H, scrollY = 0;
+
+  const NEBULAE = [
+    { fx:0.15, fy:0.25, frx:0.55, fry:0.45, c:'rgba(30,80,200,',  a:0.50 },
+    { fx:0.82, fy:0.65, frx:0.50, fry:0.42, c:'rgba(80,0,160,',   a:0.46 },
+    { fx:0.50, fy:0.08, frx:0.38, fry:0.28, c:'rgba(0,140,100,',  a:0.24 },
+    { fx:0.88, fy:0.12, frx:0.22, fry:0.18, c:'rgba(180,50,0,',   a:0.18 },
+    { fx:0.05, fy:0.78, frx:0.28, fry:0.22, c:'rgba(160,0,140,',  a:0.16 },
+  ];
+
+  /* scanline state */
+  const hScan = { pos:-2, speed:0, next:0 };
+  const vScan = { pos:-2, speed:0, next:0 };
+
+  function newH(t) {
+    const rev = Math.random() < sl.reverse_probability;
+    hScan.speed = (H / (sl.h_speed_min_ms + Math.random()*(sl.h_speed_max_ms - sl.h_speed_min_ms))) * (rev?-1:1);
+    hScan.pos   = rev ? H+2 : -2;
+    hScan.next  = t + sl.h_speed_min_ms + Math.random()*(sl.h_speed_max_ms - sl.h_speed_min_ms);
+  }
+  function newV(t) {
+    const rev = Math.random() < sl.reverse_probability;
+    vScan.speed = (W / (sl.v_speed_min_ms + Math.random()*(sl.v_speed_max_ms - sl.v_speed_min_ms))) * (rev?-1:1);
+    vScan.pos   = rev ? W+2 : -2;
+    vScan.next  = t + sl.v_speed_min_ms + Math.random()*(sl.v_speed_max_ms - sl.v_speed_min_ms);
   }
 
-  /* ── brick constants ── */
-  const BH = 22, MH = 4, CH = 26;   /* brick height, mortar, course height */
-  const BW = 50, BP = 54;            /* brick width, brick pitch */
+  /* pings */
+  const pc   = CFG.pings;
+  const pings = [];
 
-  /* ── window layout ──
-     One row of windows per ROW_H pixels of wall height.
-     Compute enough rows to cover the full canvas. */
-  const WIN_W  = Math.round(W * 0.22);
-  const WIN_H  = 270;
-  const N_COLS = W >= 700 ? 2 : 1;
-  const ROW_H  = 520;          /* vertical distance between window rows */
-  const FIRST_Y = 155;         /* top of first window row's rectangular body */
-
-  const wins = [];
-  for (let row = 0; FIRST_Y + row * ROW_H < H + WIN_H; row++) {
-    for (let col = 0; col < N_COLS; col++) {
-      const cx = W * (col + 0.5) / N_COLS;
-      wins.push({
-        cx,
-        x:   cx - WIN_W / 2,
-        y:   FIRST_Y + row * ROW_H,
-        w:   WIN_W,
-        h:   WIN_H,
-        row,
-      });
+  function tryPing(x, y, now) {
+    if (Math.random() > pc.probability_per_frame * 125) return;
+    if (pings.length >= pc.max_simultaneous) return;
+    const col = CHAOS_COLS[Math.floor(Math.random()*CHAOS_COLS.length)];
+    /* 33% chance each scanline gets a new speed/direction from current position */
+    if (Math.random() < 0.33) {
+      const rev = Math.random() < sl.reverse_probability;
+      hScan.speed = (H / (sl.h_speed_min_ms + Math.random()*(sl.h_speed_max_ms - sl.h_speed_min_ms))) * (rev?-1:1);
+      hScan.next  = now + sl.h_speed_min_ms + Math.random()*(sl.h_speed_max_ms - sl.h_speed_min_ms);
     }
+    if (Math.random() < 0.33) {
+      const rev = Math.random() < sl.reverse_probability;
+      vScan.speed = (W / (sl.v_speed_min_ms + Math.random()*(sl.v_speed_max_ms - sl.v_speed_min_ms))) * (rev?-1:1);
+      vScan.next  = now + sl.v_speed_min_ms + Math.random()*(sl.v_speed_max_ms - sl.v_speed_min_ms);
+    }
+    pings.push({
+      x, y, born:now,
+      life: pc.lifetime_min_ms + Math.random()*(pc.lifetime_max_ms - pc.lifetime_min_ms),
+      col,
+      startAngle: Math.random() * Math.PI * 2,
+      spinDir: Math.random() < 0.5 ? 1 : -1,   /* 50/50 CW vs CCW */
+      failed: Math.random() < 0.15,              /* 15% chance of failed lock */
+      failAt: 0.35 + Math.random() * 0.3,        /* fail triggers between 35-65% through lifetime */
+    });
   }
 
-  /* ─────────────────────────────────────────────────
-     BUILD WALL ON OFFSCREEN CANVAS
-     Draw bricks → soot → punch holes → return canvas
-  ───────────────────────────────────────────────── */
-  const off    = document.createElement('canvas');
-  off.width = W; off.height = H;
-  const c = off.getContext('2d');
+  function drawPings(now) {
+    for (let i = pings.length-1; i >= 0; i--) {
+      const p   = pings[i];
+      const age = (now - p.born) / p.life;
+      if (age >= 1) { pings.splice(i,1); continue; }
+      const [r,g,b] = p.col;
 
-  /* mortar base */
-  c.fillStyle = '#1a0c06';
-  c.fillRect(0, 0, W, H);
+      /* ── FAILED LOCK: reverse and unwind after failAt point ── */
+      let effectiveAge = age;
+      let failed = false;
+      if (p.failed && age >= p.failAt) {
+        failed = true;
+        const failProgress = (age - p.failAt) / (1 - p.failAt);
+        effectiveAge = p.failAt * (1 - failProgress);
+        /* once fully unwound, kill the ping */
+        if (failProgress >= 1) { pings.splice(i,1); continue; }
+      }
 
-  /* bricks */
-  for (let row = -1; row * CH < H + CH; row++) {
-    const ry  = row * CH;
-    const odd = ((row % 2) + 2) % 2;
-    const ox  = odd ? BP / 2 : 0;
+      const al = failed
+        ? (1 - (age - p.failAt) / (1 - p.failAt)) * 0.6   /* fade faster on failure */
+        : 1 - age;
 
-    for (let col = -1; ; col++) {
-      const rx = col * BP + ox;
-      if (rx > W + BP) break;
+      /* outer ring — expands normally until fail, then contracts */
+      const rr = failed
+        ? effectiveAge * pc.size_px
+        : age * pc.size_px;
 
-      const h1 = ph(col, row, 1);
-      let r, g, b;
-      if      (h1 < 0.05) { r=42;  g=10; b=8;  }
-      else if (h1 < 0.18) { r=58;  g=16; b=11; }
-      else if (h1 < 0.62) { r=72;  g=22; b=14; }
-      else if (h1 < 0.84) { r=84;  g=28; b=18; }
-      else                { r=94;  g=34; b=20; }
+      fxCtx.beginPath(); fxCtx.arc(p.x,p.y,rr,0,Math.PI*2);
+      fxCtx.strokeStyle=`rgba(${r},${g},${b},${al*0.55})`; fxCtx.lineWidth=1.5; fxCtx.stroke();
 
-      if (ph(col, row, 2) > 0.90) { r += 10; g += 6; }
-      if (ph(col, row, 3) < 0.06) { r -= 12; g -= 5; }
+      if (effectiveAge < 0.5) {
+        fxCtx.beginPath(); fxCtx.arc(p.x,p.y,rr*0.35,0,Math.PI*2);
+        fxCtx.strokeStyle=`rgba(${r},${g},${b},${al*0.25})`; fxCtx.lineWidth=1; fxCtx.stroke();
+      }
 
-      c.fillStyle = `rgb(${r},${g},${b})`;
-      c.fillRect(rx + 1, ry + 1, BW - 1, BH - 1);
+      /* crosshair arms — use effectiveAge so they unwind on failure */
+      const closeEase  = 1 - Math.pow(1 - effectiveAge, 2.5);
+      const armStart   = pc.size_px * 0.55 * (1 - closeEase * 0.75);
+      const armEnd     = pc.size_px * 0.08 + (pc.size_px * 0.04) * (1 - closeEase);
+      /* on failure, spin reverses direction */
+      const spinMult   = failed ? -p.spinDir : p.spinDir;
+      const rotation   = p.startAngle + spinMult * effectiveAge * Math.PI * 0.75;
 
-      /* dark stain on some bricks */
-      if (ph(col, row, 7) < 0.08) {
-        c.fillStyle = 'rgba(0,0,0,0.20)';
-        const sw = 8 + ph(col, row, 8) * 20;
-        const sx = rx + 2 + ph(col, row, 9) * (BW - sw - 4);
-        c.fillRect(sx, ry + 1, sw, BH - 1);
+      fxCtx.save();
+      fxCtx.translate(p.x, p.y);
+      fxCtx.rotate(rotation);
+      fxCtx.strokeStyle=`rgba(${r},${g},${b},${al*0.95})`; fxCtx.lineWidth=1.5;
+      for (let a = 0; a < 4; a++) {
+        fxCtx.rotate(Math.PI / 2);
+        fxCtx.beginPath();
+        fxCtx.moveTo(0, armEnd);
+        fxCtx.lineTo(0, armStart);
+        fxCtx.stroke();
+      }
+      fxCtx.restore();
+
+      /* center lock flash — suppressed on failed locks */
+      const lockProgress = closeEase;
+      if (!failed && lockProgress > 0.3) {
+        const flashAlpha = (lockProgress - 0.3) / 0.7 * al;
+        fxCtx.beginPath(); fxCtx.arc(p.x,p.y,2.5,0,Math.PI*2);
+        fxCtx.fillStyle=`rgba(${r},${g},${b},${flashAlpha})`;
+        fxCtx.fill();
+        if (lockProgress > 0.6) {
+          const glowR = armEnd * 1.8;
+          fxCtx.beginPath(); fxCtx.arc(p.x,p.y,glowR,0,Math.PI*2);
+          fxCtx.strokeStyle=`rgba(${r},${g},${b},${(lockProgress-0.6)/0.4 * al * 0.6})`;
+          fxCtx.lineWidth=1; fxCtx.stroke();
+        }
       }
     }
   }
 
-  /* soot darkening around each window opening */
-  wins.forEach(w => {
-    const sg = c.createRadialGradient(w.cx, w.y + w.h * 0.4, 0, w.cx, w.y + w.h * 0.4, w.w * 0.9);
-    sg.addColorStop(0, 'rgba(0,0,0,0.38)');
-    sg.addColorStop(1, 'rgba(0,0,0,0)');
-    c.fillStyle = sg;
-    c.fillRect(w.x - 50, w.y - 30, w.w + 100, w.h + 60);
-  });
-
-  /* moisture fade at bottom of each section */
-  const bf = c.createLinearGradient(0, H * 0.82, 0, H);
-  bf.addColorStop(0, 'rgba(0,0,0,0)');
-  bf.addColorStop(1, 'rgba(0,0,0,0.45)');
-  c.fillStyle = bf;
-  c.fillRect(0, H * 0.82, W, H * 0.18);
-
-  /* punch transparent holes where windows are */
-  c.globalCompositeOperation = 'destination-out';
-  wins.forEach(w => {
-    c.fillStyle = 'rgba(0,0,0,1)';
-    c.fillRect(w.x, w.y, w.w, w.h);
-  });
-  c.globalCompositeOperation = 'source-over';
-
-  /* composite brick wall onto main canvas */
-  ctx.drawImage(off, 0, 0);
-
-  /* ─────────────────────────────────────────────────
-     WINDOW FRAMES — drawn on main canvas on top of wall
-  ───────────────────────────────────────────────── */
-  function rivet(x, y, r) {
-    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.fillStyle = '#302820'; ctx.fill();
-    ctx.beginPath(); ctx.arc(x - r * 0.3, y - r * 0.3, r * 0.38, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(140,110,55,0.45)'; ctx.fill();
+  function resize() {
+    W = window.innerWidth; H = window.innerHeight;
+    layers.forEach(l => { l.canvas.width=W; l.canvas.height=H; });
+    fx.width=W; fx.height=H;
   }
 
-  wins.forEach(w => {
-    const FW = 10;
-    ctx.fillStyle = '#222018';
-    /* side pillars */
-    ctx.fillRect(w.x - FW,      w.y, FW,         w.h);
-    ctx.fillRect(w.x + w.w,     w.y, FW,         w.h);
-    /* top and bottom rails */
-    ctx.fillRect(w.x - FW,      w.y - FW, w.w + FW * 2, FW);
-    ctx.fillRect(w.x - FW,      w.y + w.h, w.w + FW * 2, FW + 2);
+  function initStars(l) {
+    l.stars = [];
+    for (let i=0; i<l.count; i++) {
+      l.stars.push({
+        x:    Math.random()*W,
+        y:    Math.random()*H,
+        r:    Math.random()*l.rMax + 0.2,
+        base: Math.random()*l.aMax + 0.1,
+        sp:   Math.random()*0.01 + 0.002,
+        ph:   Math.random()*Math.PI*2,
+        dr:   (Math.random()-0.5)*0.02*l.speed,
+        hue:  Math.random() < sc.chaos_color_probability
+              ? `rgb(${CHAOS_COLS[Math.floor(Math.random()*CHAOS_COLS.length)].join(',')})` : null,
+      });
+    }
+  }
 
-    /* corner rivets */
-    [
-      [w.x - FW / 2,       w.y + 18],
-      [w.x - FW / 2,       w.y + w.h - 18],
-      [w.x + w.w + FW / 2, w.y + 18],
-      [w.x + w.w + FW / 2, w.y + w.h - 18],
-    ].forEach(([rx, ry]) => rivet(rx, ry, 3.5));
-
-    /* mullions */
-    ctx.strokeStyle = '#282018'; ctx.lineWidth = 5; ctx.lineCap = 'square';
-    ctx.beginPath(); ctx.moveTo(w.cx,  w.y); ctx.lineTo(w.cx,  w.y + w.h); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(w.x,   w.y + w.h * 0.38); ctx.lineTo(w.x + w.w, w.y + w.h * 0.38); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(w.x,   w.y + w.h * 0.70); ctx.lineTo(w.x + w.w, w.y + w.h * 0.70); ctx.stroke();
-
-    /* mullion intersection rivets */
-    [w.cx, w.x + w.w * 0.25, w.x + w.w * 0.75].forEach(mx => {
-      rivet(mx, w.y + w.h * 0.38, 2.5);
-      rivet(mx, w.y + w.h * 0.70, 2.5);
+  function drawLayer(l, t) {
+    const offsetY = -(scrollY * l.speed) % H;
+    l.ctx.clearRect(0,0,W,H);
+    l.ctx.save();
+    l.ctx.translate(0, offsetY);
+    l.stars.forEach(s => {
+      const tw = Math.sin(t*s.sp*55+s.ph)*0.25+0.75;
+      l.ctx.beginPath(); l.ctx.arc(s.x,s.y,s.r,0,Math.PI*2);
+      l.ctx.fillStyle = s.hue ? s.hue : `rgba(210,232,255,${s.base*tw})`;
+      l.ctx.fill();
+      if (s.y+offsetY < -10) { l.ctx.beginPath(); l.ctx.arc(s.x,s.y+H,s.r,0,Math.PI*2); l.ctx.fill(); }
+      if (s.y+offsetY > H+10){ l.ctx.beginPath(); l.ctx.arc(s.x,s.y-H,s.r,0,Math.PI*2); l.ctx.fill(); }
+      s.x += s.dr; if(s.x<0)s.x=W; if(s.x>W)s.x=0;
     });
+    l.ctx.restore();
+  }
+
+  function drawNebulae() {
+    NEBULAE.forEach(n => {
+      const x=n.fx*W, y=n.fy*H, rx=n.frx*W, ry=n.fry*H, r=Math.max(rx,ry);
+      const g=fxCtx.createRadialGradient(x,y,0,x,y,r);
+      g.addColorStop(0, n.c+n.a+')'); g.addColorStop(1, n.c+'0)');
+      fxCtx.save(); fxCtx.scale(rx/r,ry/r); fxCtx.fillStyle=g; fxCtx.beginPath();
+      fxCtx.arc(x/(rx/r),y/(ry/r),r,0,Math.PI*2); fxCtx.fill(); fxCtx.restore();
+    });
+  }
+
+  document.addEventListener('mousemove', e => {
+    fx.style.transform = `translate(${(e.clientX/W-0.5)*10}px,${(e.clientY/H-0.5)*6}px)`;
   });
+  window.addEventListener('scroll', () => { scrollY = window.scrollY; });
 
-  /* ─────────────────────────────────────────────────
-     PIPE SYSTEM — drawn on main canvas
-  ───────────────────────────────────────────────── */
-  function flange(x, y, pr) {
-    ctx.beginPath(); ctx.arc(x, y, pr + 5, 0, Math.PI * 2);
-    ctx.fillStyle = '#2a2218'; ctx.fill();
-    ctx.beginPath(); ctx.arc(x, y, pr + 2, 0, Math.PI * 2);
-    ctx.fillStyle = '#353025'; ctx.fill();
-    for (let i = 0; i < 6; i++) {
-      const a = i / 6 * Math.PI * 2;
-      rivet(x + Math.cos(a) * (pr + 3.5), y + Math.sin(a) * (pr + 3.5), 2);
+  let lastT=0, hInit=false, vInit=false;
+
+  function loop(ts) {
+    if (!hInit) { newH(ts); hInit=true; }
+    if (!vInit) { newV(ts); vInit=true; }
+    const dt = ts - lastT; lastT = ts;
+    const t  = ts / 1000;
+
+    layers.forEach(l => drawLayer(l, t));
+
+    fxCtx.clearRect(0,0,W,H);
+    drawNebulae();
+
+    hScan.pos += hScan.speed * dt;
+    vScan.pos += vScan.speed * dt;
+
+    const hVis = hScan.pos>0 && hScan.pos<H;
+    const vVis = vScan.pos>0 && vScan.pos<W;
+    if (hVis && vVis && Math.random() < pc.probability_per_frame) tryPing(vScan.pos, hScan.pos, ts);
+
+    if (hScan.pos>-2 && hScan.pos<H+2) {
+      const hg = fxCtx.createLinearGradient(0,0,W,0);
+      hg.addColorStop(0,'transparent'); hg.addColorStop(0.3,'rgba(122,184,224,0.22)');
+      hg.addColorStop(0.5,'rgba(199,36,255,0.14)'); hg.addColorStop(0.7,'rgba(122,184,224,0.22)');
+      hg.addColorStop(1,'transparent');
+      fxCtx.fillStyle=hg; fxCtx.fillRect(0,hScan.pos-0.5,W,1.5);
     }
-  }
+    if ((hScan.speed>0&&hScan.pos>H)||(hScan.speed<0&&hScan.pos<-2)) newH(ts);
 
-  function bracket(x, y, pr) {
-    ctx.strokeStyle = '#2a2018'; ctx.lineWidth = 3.5; ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.moveTo(x - pr - 4, y - 8);
-    ctx.lineTo(x - pr - 4, y + pr + 2);
-    ctx.arc(x, y + pr + 2, pr + 4, Math.PI, 0);
-    ctx.lineTo(x + pr + 4, y - 8);
-    ctx.stroke();
-    rivet(x - pr - 4, y - 8, 3);
-    rivet(x + pr + 4, y - 8, 3);
-  }
-
-  function valve(x, y, pr) {
-    const R = pr * 2.2;
-    ctx.strokeStyle = '#c8860a'; ctx.lineWidth = 2.5;
-    ctx.beginPath(); ctx.arc(x, y, R, 0, Math.PI * 2); ctx.stroke();
-    ctx.fillStyle = '#8a5a0e';
-    ctx.beginPath(); ctx.arc(x, y, R * 0.28, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = '#c8860a'; ctx.lineWidth = 1.8;
-    for (let s = 0; s < 5; s++) {
-      const a = s / 5 * Math.PI * 2;
-      ctx.beginPath();
-      ctx.moveTo(x + Math.cos(a) * R * 0.28, y + Math.sin(a) * R * 0.28);
-      ctx.lineTo(x + Math.cos(a) * R, y + Math.sin(a) * R);
-      ctx.stroke();
+    if (vScan.pos>-2 && vScan.pos<W+2) {
+      const vg = fxCtx.createLinearGradient(0,0,0,H);
+      vg.addColorStop(0,'transparent'); vg.addColorStop(0.3,'rgba(57,255,110,0.18)');
+      vg.addColorStop(0.5,'rgba(0,255,231,0.12)'); vg.addColorStop(0.7,'rgba(57,255,110,0.18)');
+      vg.addColorStop(1,'transparent');
+      fxCtx.fillStyle=vg; fxCtx.fillRect(vScan.pos-0.5,0,1.5,H);
     }
-    ctx.fillStyle = '#8a5a0e';
-    ctx.fillRect(x - 3, y - R - R * 0.45, 6, R * 0.45);
-    ctx.fillRect(x - 7, y - R - R * 0.45, 14, 4);
+    if ((vScan.speed>0&&vScan.pos>W)||(vScan.speed<0&&vScan.pos<-2)) newV(ts);
+
+    drawPings(ts);
+    requestAnimationFrame(loop);
   }
 
-  function gauge(x, y, pr) {
-    const R = pr * 2.0;
-    ctx.beginPath(); ctx.arc(x, y, R, 0, Math.PI * 2);
-    ctx.fillStyle = '#1c1810'; ctx.fill();
-    ctx.strokeStyle = '#8a5a0e'; ctx.lineWidth = 2; ctx.stroke();
-    ctx.beginPath(); ctx.arc(x, y, R - 3, 0, Math.PI * 2);
-    ctx.fillStyle = '#ccc4a0'; ctx.fill();
-    const na = -Math.PI * 0.7 + ph(x, y, 42) * Math.PI * 1.4;
-    ctx.strokeStyle = '#5a1010'; ctx.lineWidth = 1.5; ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-    ctx.lineTo(x + Math.cos(na) * (R - 5), y + Math.sin(na) * (R - 5));
-    ctx.stroke();
-    ctx.fillStyle = '#444';
-    ctx.beginPath(); ctx.arc(x, y, 2, 0, Math.PI * 2); ctx.fill();
-  }
-
-  function hpipe(x1, x2, y, pr, col) {
-    if (x2 <= x1) return;
-    ctx.fillStyle = col || '#252018';
-    ctx.fillRect(x1, y - pr, x2 - x1, pr * 2);
-    /* highlight and shadow */
-    ctx.fillStyle = 'rgba(80,65,40,0.35)';
-    ctx.fillRect(x1, y - pr, x2 - x1, pr * 0.5);
-    ctx.fillStyle = 'rgba(0,0,0,0.25)';
-    ctx.fillRect(x1, y + pr * 0.5, x2 - x1, pr * 0.5);
-    /* fittings — seeded so they land consistently */
-    const step = ph(x1, y, 11) * 30 + 70;
-    for (let bx = x1 + step; bx < x2 - 20; bx += step + ph(bx, y, 12) * 40) {
-      ph(bx, y, 13) < 0.55 ? flange(bx, y, pr) : bracket(bx, y, pr);
-    }
-  }
-
-  function vpipe(x, y1, y2, pr) {
-    ctx.fillStyle = '#222018';
-    ctx.fillRect(x - pr, y1, pr * 2, y2 - y1);
-    ctx.fillStyle = 'rgba(70,58,35,0.30)';
-    ctx.fillRect(x - pr, y1, pr * 0.5, y2 - y1);
-    ctx.fillStyle = 'rgba(0,0,0,0.22)';
-    ctx.fillRect(x + pr * 0.5, y1, pr * 0.5, y2 - y1);
-  }
-
-  function tjoint(x, y, hpr, vpr) {
-    const r = Math.max(hpr, vpr);
-    ctx.beginPath(); ctx.arc(x, y, r + 4, 0, Math.PI * 2);
-    ctx.fillStyle = '#2e2620'; ctx.fill();
-    flange(x, y, r);
-  }
-
-  /* one set of pipe runs per window row */
-  const uniqueRows = [...new Set(wins.map(w => w.row))];
-  uniqueRows.forEach(rowIdx => {
-    const rowWins  = wins.filter(w => w.row === rowIdx);
-    const rowFirstY = rowWins[0].y;
-    const PA = rowFirstY - 55;    /* main run above windows */
-    const PB = rowFirstY + WIN_H + 50; /* secondary run below windows */
-
-    if (PA > 0) hpipe(0, W, PA, 9, '#252018');
-    hpipe(0, W, PB, 6, '#201c15');
-
-    /* seeded vertical drops between PA and PB */
-    const ZONE = 62;
-    for (let zx = ZONE * 0.5; zx < W; zx += ZONE) {
-      if (ph(zx, rowIdx, 60) > 0.42) continue;
-      const bx = zx + ph(zx, rowIdx, 61) * ZONE * 0.6 - ZONE * 0.3 + ZONE * 0.5;
-      let skip = false;
-      rowWins.forEach(w => { if (bx > w.x - 18 && bx < w.x + w.w + 18) skip = true; });
-      if (skip || bx < 12 || bx > W - 12) continue;
-
-      const topY = PA > 0 ? PA : 0;
-      vpipe(bx, topY, PB, 5);
-      if (PA > 0) tjoint(bx, PA, 9, 5);
-      tjoint(bx, PB, 6, 5);
-
-      const midY = (PA + PB) / 2 + (ph(zx, rowIdx, 62) - 0.5) * 80;
-      if (ph(zx, rowIdx, 63) < 0.45)      valve(bx, midY, 5);
-      else if (ph(zx, rowIdx, 64) < 0.60) gauge(bx, midY, 5);
-    }
-  });
-
-  /* thin edge pipes along top and bottom of canvas */
-  const topY = 18, botY = H - 22;
-  let lx = 0;
-  while (lx < W) {
-    const seg = ph(lx, topY, 71) * 120 + 60;
-    hpipe(lx, lx + seg, topY, 4, '#1e1a12');
-    lx += seg + ph(lx, topY, 72) * 30 + 20;
-  }
-  lx = 0;
-  while (lx < W) {
-    const seg = ph(lx, botY, 81) * 90 + 50;
-    hpipe(lx, lx + seg, botY, 4, '#1e1a12');
-    lx += seg + ph(lx, botY, 82) * 40 + 15;
-  }
+  window.addEventListener('resize', () => { resize(); layers.forEach(initStars); });
+  resize();
+  layers.forEach(initStars);
+  requestAnimationFrame(loop);
 }
-
-/* debounced resize — redraws brick wall to fit new viewport */
-let _brickResizeTimer = null;
-window.addEventListener('resize', () => {
-  clearTimeout(_brickResizeTimer);
-  _brickResizeTimer = setTimeout(initBrickWall, 160);
-});
 
 /* ============================================================
    TITLE — ARCAEGIUM color chaos spans
@@ -517,7 +471,7 @@ function initTitleSpans() {
 }
 
 /* ============================================================
-   CARD TITLE SCRAMBLE — re-enable with renderPortals()
+   CARD TITLE SCRAMBLE
    ============================================================ */
 function initCardScrambles() {
   const CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefΔΨΩλφ∞≠±0123456789!@#$%^&*';
@@ -638,18 +592,15 @@ function initCardScrambles() {
 }
 
 /* ============================================================
-   CARD FLICKER — re-enable with renderPortals()
+   CARD FLICKER
    ============================================================ */
 function initCardFlicker() {
-  const INTERVAL_MIN = 15000;
-  const INTERVAL_MAX = 20000;
-  const STAGGER_MAX  = 10000;
-
+  const fc = CFG.card_flicker;
   document.querySelectorAll('.portal').forEach(card => {
     const flicker  = card.querySelector('.card-flicker');
     const staticEl = card.querySelector('.card-static');
     function scheduleNext() {
-      const delay = INTERVAL_MIN + Math.random() * (INTERVAL_MAX - INTERVAL_MIN);
+      const delay = fc.interval_min_ms + Math.random()*(fc.interval_max_ms - fc.interval_min_ms);
       setTimeout(() => {
         flicker.classList.remove('firing'); staticEl.classList.remove('firing');
         void flicker.offsetWidth;
@@ -660,7 +611,7 @@ function initCardFlicker() {
         }, 1300);
       }, delay);
     }
-    setTimeout(scheduleNext, Math.random() * STAGGER_MAX);
+    setTimeout(scheduleNext, Math.random() * fc.initial_stagger_max_ms);
   });
 }
 
@@ -668,13 +619,7 @@ function initCardFlicker() {
    STATUS BAR — live clock + drifting dimensional coords
    ============================================================ */
 function initStatusBar() {
-  const ec = {
-    update_interval_ms: 50,
-    volatility: 0.18,
-    jolt_probability: 0.2,
-    jolt_strength: 0.55,
-  };
-
+  const ec = CFG.entropy;
   const timeEl = document.getElementById('liveTime');
   const freqEl = document.getElementById('dimFreq');
   const ridxEl = document.getElementById('realityIdx');
@@ -683,52 +628,77 @@ function initStatusBar() {
   let freq = 312.847;
   let ridx = 0x1000 + Math.floor(Math.random()*0xEFFF);
 
+  /* ── ENTROPY: four independent velocity layers ──
+     Mean ~14.14, sd ~0.33 — bell curve, no hard clamp.
+     Layer speeds as fractions of base (4th decimal = 100%):
+       d1 (tenths)       = 25%
+       d2 (hundredths)   = 50%
+       d3 (thousandths)  = 70%
+       d4 (ten-thousandths) = 100%
+     Each layer has its own position and velocity.
+     Combined: entropy = d1 + d2/10 + d3/100 + d4/1000
+     ... but we track each at its own scale then sum.
+  */
   const MEAN = 14.14;
   const SD   = 0.33;
 
+  /* each layer: pos = value at that decimal place scale, vel = velocity */
+  /* d1 ranges ~13–15 (integer + tenths), d2–d4 are 0–9 scale */
   const d = [
-    { pos: MEAN, vel: 0, rev: 0.04, vol: ec.volatility * 0.25, joltP: ec.jolt_probability * 0.25, joltS: ec.jolt_strength * 0.25 },
-    { pos: 0,    vel: 0, rev: 0.06, vol: ec.volatility * 0.50, joltP: ec.jolt_probability * 0.50, joltS: ec.jolt_strength * 0.50 },
-    { pos: 0,    vel: 0, rev: 0.08, vol: ec.volatility * 0.70, joltP: ec.jolt_probability * 0.70, joltS: ec.jolt_strength * 0.70 },
-    { pos: 0,    vel: 0, rev: 0.10, vol: ec.volatility * 1.00, joltP: ec.jolt_probability * 1.00, joltS: ec.jolt_strength * 1.00 },
+    { pos: MEAN,  vel: 0, scale: 1,      rev: 0.04, vol: ec.volatility * 0.25, joltP: ec.jolt_probability * 0.25, joltS: ec.jolt_strength * 0.25 },
+    { pos: 0,     vel: 0, scale: 0.1,    rev: 0.06, vol: ec.volatility * 0.50, joltP: ec.jolt_probability * 0.50, joltS: ec.jolt_strength * 0.50 },
+    { pos: 0,     vel: 0, scale: 0.01,   rev: 0.08, vol: ec.volatility * 0.70, joltP: ec.jolt_probability * 0.70, joltS: ec.jolt_strength * 0.70 },
+    { pos: 0,     vel: 0, scale: 0.001,  rev: 0.10, vol: ec.volatility * 1.00, joltP: ec.jolt_probability * 1.00, joltS: ec.jolt_strength * 1.00 },
   ];
 
+  /* initialise d2–d4 to random 0–9 positions */
   d[1].pos = Math.random() * 9;
   d[2].pos = Math.random() * 9;
   d[3].pos = Math.random() * 9;
 
-  function pad(n, digits=2) { return String(n).padStart(digits,'0'); }
+  function pad(n, d=2) { return String(n).padStart(d,'0'); }
 
   setInterval(() => {
+    /* update each layer independently */
     d.forEach((layer, i) => {
       layer.vel += (Math.random()-0.5) * layer.vol;
       if (Math.random() < layer.joltP) layer.vel += (Math.random()-0.5) * layer.joltS;
-      layer.vel *= 0.78;
+      layer.vel *= 0.78; /* friction */
 
       if (i === 0) {
+        /* d1: mean reversion toward MEAN, bell curve via gaussian-like reversion */
         const pull = (MEAN - layer.pos) * layer.rev;
         layer.vel += pull;
         layer.pos += layer.vel;
+        /* soft clamp — reversion strengthens dramatically at extremes */
         if (layer.pos < MEAN - SD*3) layer.vel += 0.08;
         if (layer.pos > MEAN + SD*3) layer.vel -= 0.08;
       } else {
+        /* d2–d4: free drift 0–9, wrap around */
         layer.pos += layer.vel;
         if (layer.pos > 9)  { layer.pos = 9  - (layer.pos - 9);  layer.vel *= -0.6; }
         if (layer.pos < 0)  { layer.pos = -layer.pos;             layer.vel *= -0.6; }
       }
     });
 
-    const intAndTenth  = d[0].pos;
-    const intPart      = Math.floor(Math.abs(intAndTenth));
-    const sign         = intAndTenth < 0 ? '-' : '';
-    const d1digit      = Math.floor((Math.abs(intAndTenth) - intPart) * 10) % 10;
-    const d2digit      = Math.floor(Math.abs(d[1].pos)) % 10;
-    const d3digit      = Math.floor(Math.abs(d[2].pos)) % 10;
-    const d4digit      = Math.floor(Math.abs(d[3].pos)) % 10;
+    /* combine layers into display value */
+    const tenths      = Math.abs(d[1].pos);
+    const hundredths  = Math.abs(d[2].pos);
+    const thousandths = Math.abs(d[3].pos);
+
+    /* build the string manually to show layered decimal speeds */
+    const intAndTenth = d[0].pos;
+    const intPart     = Math.floor(Math.abs(intAndTenth));
+    const sign        = intAndTenth < 0 ? '-' : '';
+    const d1digit     = Math.floor((Math.abs(intAndTenth) - intPart) * 10) % 10;
+    const d2digit     = Math.floor(tenths)      % 10;
+    const d3digit     = Math.floor(hundredths)  % 10;
+    const d4digit     = Math.floor(thousandths) % 10;
 
     entEl.textContent = `ENTROPY: ${sign}${intPart}.${d1digit}${d2digit}${d3digit}${d4digit} %`;
   }, ec.update_interval_ms);
 
+  /* clock + slow-drifting values on 1s interval */
   function tick() {
     const now = new Date();
     timeEl.textContent = `${pad(now.getUTCHours())}:${pad(now.getUTCMinutes())}:${pad(now.getUTCSeconds())} UTC`;
