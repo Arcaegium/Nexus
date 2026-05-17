@@ -906,7 +906,7 @@ function initWorkshopTitle() {
       const o2Ph = mPh;
 
       /* main chain */
-      drawChain(mainChainPts, mPh, LINK_L, false);
+      drawChain(mainChainPts, mPh, LINK_L, true);
 
       /* O2 → P chain */
       drawChain(o2pPts, o2Ph, LINK_L * 0.72, false);
