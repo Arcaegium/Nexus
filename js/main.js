@@ -896,17 +896,18 @@ function initWorkshopTitle() {
     function buildMainChain() {
       const pts = [], cn = GR+2, c2 = O_R+3;
 
-      /* right screen edge → g14 (mirror of g1) → g13 (mirror of g2) → P */
+      /* right screen edge → g14 → g13 → P */
       const cn14 = gs[14].r + 2;
       const c13  = gs[13].r + 3;
       pts.push({x: W + 60, y: O_Y});
-      /* g14: enter from right, arc OVER top (0→-π CCW) */
+      /* g14: approach from right (3 o'clock), arc OVER top CCW to 9 o'clock — mirrors g1 */
       pts.push({x: gs[14].x + cn14, y: gs[14].y});
       pts.push(...arcPts(gs[14].x, gs[14].y, cn14, 0, -Math.PI, 8));
-      /* g13: approach at 2 o'clock, arc OVER top to 9 o'clock (mirrors g2 approach) */
-      pts.push({x: gs[13].x + c13*0.866, y: gs[13].y - c13*0.5});
-      pts.push(...arcPts(gs[13].x, gs[13].y, c13, -Math.PI/6, -Math.PI, 10));
-      /* g13 9 o'clock exit → P at 3 o'clock (horizontal, both at P_Y) */
+      /* g13: approach at 10 o'clock (upper-left, mirror of g2's 2 o'clock upper-right) */
+      pts.push({x: gs[13].x + c13*Math.cos(-5*Math.PI/6), y: gs[13].y + c13*Math.sin(-5*Math.PI/6)});
+      /* g13 arc CW from 10 o'clock to 3 o'clock (over top, mirror of g2's CCW 2→9) */
+      pts.push(...arcPts(gs[13].x, gs[13].y, c13, -5*Math.PI/6, 0, 10));
+      /* g13 3 o'clock exit → P at 3 o'clock (diagonal up-left, mirrors g2's 9→g3) */
       pts.push({x: P_CX + P_R + 2, y: P_Y});
       /* arc P: 3 o'clock → 10 o'clock CCW (over top, continuing to upper-left) */
       pts.push(...arcPts(P_CX, P_Y, P_R+2, 0, -5*Math.PI/6, 12));
