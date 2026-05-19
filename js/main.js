@@ -175,9 +175,6 @@ function hexToGlow(hex) {
 function renderHudFooter() {
   const hud = SITE.hud_footer;
   document.getElementById('hudStatus').textContent = hud.status_label;
-  const link = document.getElementById('hudGithub');
-  link.href        = hud.github_url;
-  link.textContent = hud.github_label;
 }
 
 /* ============================================================
