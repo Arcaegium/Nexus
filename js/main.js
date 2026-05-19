@@ -723,6 +723,8 @@ function initWorkshopTitle() {
       10: { x: H_LS_X,                       y: CAP_Y + SH * 0.15,   r: GR   },
       11: { x: lH.x + lH.w * 0.24,          y: H_BAR_Y + SH * 0.07, r: GR   },
       12: { x: lH.x + lH.w * 0.76,          y: H_BAR_Y + SH * 0.07, r: GR   },
+      13: { x: lP.x + lP.w + O_R * 2.5,    y: P_Y,                 r: O_R  },  /* mirror of g2 */
+      14: { x: lP.x + lP.w + O_R * 4.5,    y: P_Y,                 r: S_R  },  /* mirror of g1 */
     };
 
     const CR_o1 = O_R + 4, CR_s = S_R + 3, LINK_L = FS * 0.052;
@@ -885,14 +887,21 @@ function initWorkshopTitle() {
       ctx.beginPath();ctx.arc(cx,cy,hR*0.40,0,Math.PI*2);ctx.fillStyle=IR_L;ctx.fill();
     }
 
-    /* main chain path: O2 exit → 12→11→10→S→9→8→O1→7→6→5→4→3→2→1 */
+    /* main chain path: right edge → g14→g13→P→O2 → 12→11→10→S→9→8→O1→7→6→5→4→3→2→1 */
     function buildMainChain() {
       const pts = [], cn = GR+2, c2 = O_R+3;
 
-      /* right screen edge → P bowl → O2 (integrates the old separate chain) */
-      /* start past right edge — canvas clips, chain always reaches viewport boundary */
+      /* right screen edge → g14 (mirror of g1) → g13 (mirror of g2) → P */
+      const cn14 = gs[14].r + 2;
+      const c13  = gs[13].r + 3;
       pts.push({x: W + 60, y: P_Y});
-      pts.push({x: W, y: P_Y});
+      /* g14: enter from right, arc OVER top (0→-π CCW) */
+      pts.push({x: gs[14].x + cn14, y: gs[14].y});
+      pts.push(...arcPts(gs[14].x, gs[14].y, cn14, 0, -Math.PI, 8));
+      /* g13: approach at 2 o'clock, arc OVER top to 9 o'clock (mirrors g2 approach) */
+      pts.push({x: gs[13].x + c13*0.866, y: gs[13].y - c13*0.5});
+      pts.push(...arcPts(gs[13].x, gs[13].y, c13, -Math.PI/6, -Math.PI, 10));
+      /* g13 9 o'clock exit → P at 3 o'clock (horizontal, both at P_Y) */
       pts.push({x: P_CX + P_R + 2, y: P_Y});
       /* arc P: 3 o'clock → 10 o'clock CCW (over top, continuing to upper-left) */
       pts.push(...arcPts(P_CX, P_Y, P_R+2, 0, -5*Math.PI/6, 12));
@@ -1023,10 +1032,10 @@ function initWorkshopTitle() {
       drawChain(mainChainPts, mPh, LINK_L, true);
 
       /* ── 4. node gears 1-12: sign lookup encodes correct chain-direction spin ── */
-      const SIGNS = {1:-1,2:-1,3:-1,4:1,5:-1,6:1,7:-1,8:-1,9:1,10:-1,11:1,12:-1};
-      [1,2,3,4,5,6,7,8,9,10,11,12].forEach(n => {
+      const SIGNS = {1:-1,2:-1,3:-1,4:1,5:-1,6:1,7:-1,8:-1,9:1,10:-1,11:1,12:-1,13:-1,14:-1};
+      [1,2,3,4,5,6,7,8,9,10,11,12,13,14].forEach(n => {
         const g   = gs[n];
-        const gω  = (n === 2) ? ω*1.38 : ω;   /* g2 matches O1/O2 speed */
+        const gω  = (n === 2 || n === 13) ? ω*1.38 : ω;   /* g2/g13 match O1/O2 speed */
         const ang = SIGNS[n] * t * gω * (O_R / g.r);
         gearStd(g.x, g.y, g.r, 8, ang, BR, BR_D);
       });
