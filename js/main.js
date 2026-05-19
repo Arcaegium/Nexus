@@ -891,6 +891,14 @@ function initWorkshopTitle() {
 
     const mainChainPts = buildMainChain();
 
+    /* ── PISTON STATE ── */
+    let pistonStep     = 0;
+    let pistonLastTooth = -1;
+    let isHammering    = false;
+    let hammerStartT   = 0;
+    const N_PISTON_STEPS = 5;
+    const HAMMER_DUR     = 0.13;   /* seconds for hammer to fall */
+
     function frame(ts) {
       ctx.clearRect(0, 0, W, CH);
       const t = ts*0.001, ω = 0.51;
@@ -898,6 +906,29 @@ function initWorkshopTitle() {
       const sA1 = -t*ω*(O_R/S_R), sA2 =  t*ω*(O_R/S_R);
       /* chain phase: 0.4× factor syncs link-rate to O1's 8-tooth pitch */
       const mPh = (t * O_R * ω * 0.214) % LINK_L;
+
+      /* ── PISTON RATCHET: one click per P tooth ── */
+      const toothPeriod = (Math.PI*2) / P_TEETH;
+      const curTooth = Math.floor(Math.abs(pA) / toothPeriod) % P_TEETH;
+      if (curTooth !== pistonLastTooth) {
+        pistonLastTooth = curTooth;
+        if (!isHammering) {
+          if (pistonStep >= N_PISTON_STEPS) {
+            isHammering = true;
+            hammerStartT = t;
+          } else {
+            pistonStep++;
+          }
+        }
+      }
+      if (isHammering && (t - hammerStartT) >= HAMMER_DUR) {
+        isHammering = false;
+        pistonStep = 0;
+      }
+      /* 0 = fully retracted, 1 = fully extended; hammer falls with quadratic ease-in */
+      const pistonFrac = isHammering
+        ? Math.max(0, 1 - Math.pow((t - hammerStartT) / HAMMER_DUR, 1.8))
+        : pistonStep / N_PISTON_STEPS;
 
       /* ── 1. W K H text behind chain ── */
       ctx.font=`900 ${FS}px Orbitron, monospace`;
@@ -949,7 +980,30 @@ function initWorkshopTitle() {
       ctx.closePath(); ctx.fill(); ctx.stroke();
       ctx.restore();
 
-      /* ── 10. R text in front ── */
+      /* ── 9b. PISTON inside P stem ── */
+      {
+        const stH     = BASELINE - CAP_Y;         /* stem height */
+        const ptopY   = BASELINE - 2 * stH * pistonFrac; /* head top Y */
+        const pRodW   = Math.round(stW * 0.30);
+        const pRodX   = lP.x + Math.round((stW - pRodW) * 0.5);
+        const pHeadH  = Math.max(3, Math.round(stW * 0.30));
+        const pHeadW  = Math.round(stW * 0.80);
+        const pHeadX  = lP.x + Math.round((stW - pHeadW) * 0.5);
+        const rodBot  = BASELINE;
+
+        /* rod body (dark iron, inside stem) */
+        if (rodBot > ptopY + pHeadH) {
+          ctx.fillStyle = IR;
+          ctx.fillRect(pRodX, ptopY + pHeadH, pRodW, rodBot - ptopY - pHeadH);
+        }
+        /* piston head — three-layer brass for depth */
+        ctx.fillStyle = BR_D;
+        ctx.fillRect(pHeadX, ptopY, pHeadW, pHeadH);
+        ctx.fillStyle = BR;
+        ctx.fillRect(pHeadX + 1, ptopY + 1, pHeadW - 2, Math.ceil(pHeadH * 0.45));
+        ctx.fillStyle = BR_L;
+        ctx.fillRect(pHeadX + 2, ptopY + 1, pHeadW - 4, Math.ceil(pHeadH * 0.18));
+      }
       ctx.font=`900 ${FS}px Orbitron, monospace`;
       ctx.textBaseline='alphabetic'; ctx.textAlign='left'; ctx.fillStyle=TX;
       ctx.shadowColor='rgba(200,136,10,0.38)'; ctx.shadowBlur=FS*0.10;
