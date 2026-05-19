@@ -689,7 +689,7 @@ function initParallax() {
       /* video pans DOWN: starts at top of frame, reveals lower portion as user scrolls.
          Travel = 50% of viewport height, spread proportionally over full scroll range. */
       const bgRate = (H * 0.50) / total;
-      bg.style.transform = `translateY(${(sy * bgRate).toFixed(1)}px)`;
+      bg.style.transform = `translateY(${(-sy * bgRate).toFixed(1)}px)`;
     }
 
     if (brick) {
