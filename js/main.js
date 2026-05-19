@@ -890,7 +890,7 @@ function initWorkshopTitle() {
 
     function frame(ts) {
       ctx.clearRect(0, 0, W, CH);
-      const t = ts*0.001, ω = 0.34;
+      const t = ts*0.001, ω = 0.51;
       const o1A = -t*ω, o2A = -t*ω, pA = -t*ω*(O_R/P_R);
       const sA1 = -t*ω*(O_R/S_R), sA2 =  t*ω*(O_R/S_R);
       /* chain phase: 0.4× factor syncs link-rate to O1's 8-tooth pitch */
@@ -922,21 +922,6 @@ function initWorkshopTitle() {
 
       /* ── 6. O1 gearFlat ── */
       gearFlat(lO1.cx, O_Y, O_R, 8, o1A, BR, BR_D);
-
-      /* ── 7. coupling rod O1→gear 2 (both pins rotate, counter-phase for pump effect) ── */
-      const rodX1 = lO1.cx + Math.cos(o1A)*O_R*0.70;
-      const rodY1 = O_Y    + Math.sin(o1A)*O_R*0.70;
-      const g2Ang = -o1A; /* opposite direction → pump action */
-      const rodX2 = gs[2].x + Math.cos(g2Ang)*O_R*0.70;
-      const rodY2 = gs[2].y + Math.sin(g2Ang)*O_R*0.70;
-      ctx.strokeStyle=BR_D; ctx.lineWidth=FS*0.028; ctx.lineCap='round';
-      ctx.beginPath(); ctx.moveTo(rodX1,rodY1); ctx.lineTo(rodX2,rodY2); ctx.stroke();
-      ctx.strokeStyle=BR; ctx.lineWidth=FS*0.012;
-      ctx.beginPath(); ctx.moveTo(rodX1,rodY1); ctx.lineTo(rodX2,rodY2); ctx.stroke();
-      ctx.beginPath(); ctx.arc(rodX1,rodY1,FS*0.018,0,Math.PI*2);
-      ctx.fillStyle=BR_L; ctx.fill();
-      ctx.beginPath(); ctx.arc(rodX2,rodY2,FS*0.018,0,Math.PI*2);
-      ctx.fillStyle=BR_L; ctx.fill();
 
       /* ── 8. O2 gearRing ── */
       gearRing(lO2.cx, O_Y, O_R, 12, o2A, BR, BR_D);
