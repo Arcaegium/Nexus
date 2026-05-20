@@ -49,7 +49,8 @@ async function boot() {
   initForgeParticles();
   initParallax();
   initWorkshopTitle();
-  /* initCardScrambles() and initCardFlicker() re-enable with renderPortals() */
+  initCardScrambles();
+  initCardFlicker();
   initStatusBar();
 }
 
@@ -1301,122 +1302,106 @@ function initWorkshopTitle() {
 
 
 function initCardScrambles() {
-  const CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefΔΨΩλφ∞≠±0123456789!@#$%^&*';
-  const CHAOS  = ['#c724ff','#39ff6e','#ff2d6f','#00ffe7','#ffe847','#ff9a45'];
-  const rc = () => CHARS[Math.floor(Math.random()*CHARS.length)];
-  const rk = () => CHAOS[Math.floor(Math.random()*CHAOS.length)];
+  /* ── steampunk split-flap display for portal titles ── */
+  const POOL = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 #&*%+/^~!?-';
+  const FLIP_MS   = 80;   /* ms per idle flip */
+  const FAST_MS   = 28;   /* ms per flip when resolving on hover */
+  const PAIR_DELAY= 155;  /* ms between resolving pairs (outside-in) */
 
-  function measureWidths(text, refEl) {
-    const probe = document.createElement('span');
-    probe.style.cssText = `position:absolute;visibility:hidden;white-space:nowrap;
-      font-family:'Orbitron',sans-serif;
-      font-size:${getComputedStyle(refEl).fontSize};
-      font-weight:700;letter-spacing:0.06em;`;
-    document.body.appendChild(probe);
-    const widths = [];
-    for (const ch of text) { probe.textContent=ch; widths.push(probe.getBoundingClientRect().width); }
-    document.body.removeChild(probe);
-    return widths;
+  /* strip accents so É → E etc — real split-flap boards are ASCII only */
+  function normalise(str) {
+    return str.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   }
 
-  function initKnown(card) {
-    const realTitle = card.dataset.title || '';
-    const nameEl    = card.querySelector('.portal-name');
-    const inner     = nameEl.querySelector('.name-inner');
+  document.querySelectorAll('.portal[data-portal-id]').forEach(card => {
+    const raw   = card.dataset.title || '';
+    if (!raw) return;
+    const title = normalise(raw);
 
-    document.fonts.ready.then(() => {
-      const widths = measureWidths(realTitle, nameEl);
-      const spans  = [];
-
-      realTitle.split('').forEach((ch, i) => {
-        const s = document.createElement('span');
-        s.className = 'sc';
-        s.style.width   = widths[i] + 'px';
-        s.style.display = 'inline-block';
-        s.style.textAlign = 'center';
-        s.style.color   = rk();
-        s.textContent   = rc();
-        inner.appendChild(s);
-        spans.push({ el:s, real:ch, scrambling:true });
-      });
-
-      setInterval(() => {
-        spans.forEach(s => {
-          if (!s.scrambling) return;
-          if (Math.random() < 0.15) { s.el.textContent=rc(); s.el.style.color=rk(); }
-        });
-      }, 80);
-
-      let hovered=false, timers=[];
-
-      card.addEventListener('mouseenter', () => {
-        if (hovered) return; hovered=true;
-        const order=[];
-        let lo=0, hi=spans.length-1;
-        while (lo<=hi) {
-          if (lo===hi) order.push(lo);
-          else { order.push(lo); order.push(hi); }
-          lo++; hi--;
-        }
-        timers = order.map((idx,step) => setTimeout(() => {
-          spans[idx].scrambling=false;
-          spans[idx].el.textContent=spans[idx].real;
-          spans[idx].el.style.color='';
-        }, (step/order.length)*1200));
-      });
-
-      card.addEventListener('mouseleave', () => {
-        hovered=false;
-        timers.forEach(id => clearTimeout(id)); timers=[];
-        spans.forEach(s => { s.scrambling=true; });
-        const shuffled = [...Array(spans.length).keys()].sort(()=>Math.random()-0.5);
-        shuffled.forEach((idx,step) => {
-          setTimeout(() => {
-            spans[idx].el.textContent=rc();
-            spans[idx].el.style.color=rk();
-          }, (step/spans.length)*500);
-        });
-      });
-    });
-  }
-
-  function initUnknown(card) {
     const nameEl = card.querySelector('.portal-name');
-    const inner  = nameEl.querySelector('.name-inner');
-    document.fonts.ready.then(() => {
-      const probe = document.createElement('span');
-      probe.style.cssText = `position:absolute;visibility:hidden;
-        font-family:'Orbitron',sans-serif;
-        font-size:${getComputedStyle(nameEl).fontSize};
-        font-weight:700;letter-spacing:0.06em;`;
-      probe.textContent = 'M';
-      document.body.appendChild(probe);
-      const cw = probe.getBoundingClientRect().width;
-      document.body.removeChild(probe);
+    const inner  = nameEl && nameEl.querySelector('.name-inner');
+    if (!inner) return;
 
-      const spans = [];
-      for (let i=0; i<12; i++) {
-        const s = document.createElement('span');
-        s.className = 'sc';
-        s.style.width   = cw+'px';
-        s.style.display = 'inline-block';
-        s.style.textAlign = 'center';
-        s.style.color   = rk();
-        s.textContent   = rc();
-        inner.appendChild(s);
-        spans.push(s);
-      }
-      setInterval(() => {
-        spans.forEach(s => { if(Math.random()<0.18){s.textContent=rc();s.style.color=rk();} });
-      }, 80);
+    /* build one .sfc panel per character */
+    inner.innerHTML = '';
+    const state = title.split('').map(ch => {
+      const span = document.createElement('span');
+      const isSpace = ch === ' ';
+      span.className = isSpace ? 'sfc sfc-space' : 'sfc';
+      let pi = Math.floor(Math.random() * POOL.length);
+      span.textContent = isSpace ? '\u00a0' : POOL[pi];
+      inner.appendChild(span);
+      return {
+        span, isSpace,
+        target : POOL.includes(ch) ? ch : (isSpace ? ' ' : ch),
+        pi,
+        timer  : Math.random() * FLIP_MS,
+        rate   : FLIP_MS + (Math.random() * 30 - 15),
+        resolved: false,
+        fastTimer: null,
+      };
     });
-  }
 
-  document.querySelectorAll('.portal').forEach(card => {
-    if (card.dataset.unknown==='true') initUnknown(card);
-    else initKnown(card);
+    let hovered = false;
+    let raf = null, last = performance.now();
+
+    function tick(now) {
+      const dt = now - last; last = now;
+      state.forEach(s => {
+        if (s.resolved || s.isSpace) return;
+        s.timer -= dt;
+        if (s.timer > 0) return;
+        s.timer += s.rate;
+        s.pi = (s.pi + 1) % POOL.length;
+        s.span.textContent = POOL[s.pi];
+      });
+      raf = requestAnimationFrame(tick);
+    }
+
+    function resolveChar(s) {
+      if (s.isSpace) { s.resolved = true; return; }
+      if (s.fastTimer) clearInterval(s.fastTimer);
+      s.fastTimer = setInterval(() => {
+        if (s.resolved) { clearInterval(s.fastTimer); return; }
+        s.pi = (s.pi + 1) % POOL.length;
+        s.span.textContent = POOL[s.pi];
+        if (POOL[s.pi] === s.target) {
+          clearInterval(s.fastTimer);
+          s.resolved = true;
+          s.span.textContent = s.target;
+        }
+      }, FAST_MS);
+    }
+
+    function resolveOutwardIn() {
+      let lo = 0, hi = state.length - 1, step = 0;
+      while (lo <= hi) {
+        const delay = step * PAIR_DELAY;
+        const a = lo, b = hi;
+        setTimeout(() => resolveChar(state[a]), delay);
+        if (b !== a) setTimeout(() => resolveChar(state[b]), delay);
+        lo++; hi--; step++;
+      }
+    }
+
+    card.addEventListener('mouseenter', () => {
+      if (hovered) return;
+      hovered = true;
+      resolveOutwardIn();
+    });
+
+    card.addEventListener('mouseleave', () => {
+      hovered = false;
+      state.forEach(s => {
+        if (s.fastTimer) { clearInterval(s.fastTimer); s.fastTimer = null; }
+        if (!s.isSpace) s.resolved = false;
+      });
+    });
+
+    if (!raf) raf = requestAnimationFrame(tick);
   });
 }
+
 
 /* ============================================================
    CARD FLICKER — re-enable with renderPortals()
