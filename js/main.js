@@ -176,8 +176,9 @@ function hexToGlow(hex) {
    HUD FOOTER
    ============================================================ */
 function renderHudFooter() {
-  const hud = SITE.hud_footer;
-  document.getElementById('hudStatus').textContent = hud.status_label;
+  const hud    = SITE.hud_footer;
+  const textEl = document.getElementById('forgeStatusText');
+  if (textEl) textEl.textContent = hud.status_label;
 }
 
 /* ============================================================
@@ -1459,78 +1460,80 @@ function initCardFlicker() {
    STATUS BAR — live clock + drifting dimensional coords
    ============================================================ */
 function initStatusBar() {
-  const ec = {
-    update_interval_ms: 50,
-    volatility: 0.18,
-    jolt_probability: 0.2,
-    jolt_strength: 0.55,
-  };
+  const timeEl      = document.getElementById('liveTime');
+  const freqEl      = document.getElementById('dimFreq');
+  const ridxEl      = document.getElementById('realityIdx');
+  const entEl       = document.getElementById('entropyVal');
+  const psiNeedle   = document.getElementById('psiNeedle');
+  const psiValueArc = document.getElementById('psiValueArc');
+  const thermFill   = document.getElementById('thermFill');
 
-  const timeEl = document.getElementById('liveTime');
-  const freqEl = document.getElementById('dimFreq');
-  const ridxEl = document.getElementById('realityIdx');
-  const entEl  = document.getElementById('entropyVal');
+  /* ── boiler pressure ── */
+  const PSI_MEAN = 4.20, PSI_MIN = 3.8, PSI_MAX = 5.5;
+  const PSI_ARC  = Math.PI * 14;   /* gauge arc total length */
+  let psi    = PSI_MEAN;
+  let psiVel = 0;
 
-  let freq = 312.847;
-  let ridx = 0x1000 + Math.floor(Math.random()*0xEFFF);
+  /* ── forge temperature ── */
+  const TEMP_MEAN = 1147, TEMP_LO = 1080, TEMP_HI = 1215;
+  let tempPos = TEMP_MEAN, tempVel = 0;
 
-  const MEAN = 14.14;
-  const SD   = 0.33;
+  /* ── reality index ── */
+  let ridx = 0x1000 + Math.floor(Math.random() * 0xEFFF);
 
-  const d = [
-    { pos: MEAN, vel: 0, rev: 0.04, vol: ec.volatility * 0.25, joltP: ec.jolt_probability * 0.25, joltS: ec.jolt_strength * 0.25 },
-    { pos: 0,    vel: 0, rev: 0.06, vol: ec.volatility * 0.50, joltP: ec.jolt_probability * 0.50, joltS: ec.jolt_strength * 0.50 },
-    { pos: 0,    vel: 0, rev: 0.08, vol: ec.volatility * 0.70, joltP: ec.jolt_probability * 0.70, joltS: ec.jolt_strength * 0.70 },
-    { pos: 0,    vel: 0, rev: 0.10, vol: ec.volatility * 1.00, joltP: ec.jolt_probability * 1.00, joltS: ec.jolt_strength * 1.00 },
-  ];
+  function pad(n, d = 2) { return String(n).padStart(d, '0'); }
 
-  d[1].pos = Math.random() * 9;
-  d[2].pos = Math.random() * 9;
-  d[3].pos = Math.random() * 9;
-
-  function pad(n, digits=2) { return String(n).padStart(digits,'0'); }
-
+  /* fast loop — 50ms — physics + display + SVG updates */
   setInterval(() => {
-    d.forEach((layer, i) => {
-      layer.vel += (Math.random()-0.5) * layer.vol;
-      if (Math.random() < layer.joltP) layer.vel += (Math.random()-0.5) * layer.joltS;
-      layer.vel *= 0.78;
 
-      if (i === 0) {
-        const pull = (MEAN - layer.pos) * layer.rev;
-        layer.vel += pull;
-        layer.pos += layer.vel;
-        if (layer.pos < MEAN - SD*3) layer.vel += 0.08;
-        if (layer.pos > MEAN + SD*3) layer.vel -= 0.08;
-      } else {
-        layer.pos += layer.vel;
-        if (layer.pos > 9)  { layer.pos = 9  - (layer.pos - 9);  layer.vel *= -0.6; }
-        if (layer.pos < 0)  { layer.pos = -layer.pos;             layer.vel *= -0.6; }
-      }
-    });
+    /* temperature */
+    tempVel += (Math.random() - 0.5) * 1.2;
+    tempVel += (TEMP_MEAN - tempPos) * 0.04;
+    tempVel *= 0.85;
+    if (tempPos < 1090) tempVel += 2;
+    if (tempPos > 1210) tempVel -= 2;
+    tempPos += tempVel;
+    const whole = Math.floor(Math.abs(tempPos));
+    const frac  = Math.abs(tempPos - Math.floor(tempPos));
+    entEl.textContent =
+      `FORGE-TEMP: ${whole}.${Math.floor(frac*10)%10}${Math.floor(frac*100)%10}${Math.floor(frac*1000)%10} °C`;
+    if (thermFill) {
+      const pct   = Math.min(1, Math.max(0, (tempPos - TEMP_LO) / (TEMP_HI - TEMP_LO)));
+      const fillH = Math.round(pct * 16);
+      thermFill.setAttribute('y', 18 - fillH);
+      thermFill.setAttribute('height', Math.max(1, fillH));
+    }
 
-    const intAndTenth  = d[0].pos;
-    const intPart      = Math.floor(Math.abs(intAndTenth));
-    const sign         = intAndTenth < 0 ? '-' : '';
-    const d1digit      = Math.floor((Math.abs(intAndTenth) - intPart) * 10) % 10;
-    const d2digit      = Math.floor(Math.abs(d[1].pos)) % 10;
-    const d3digit      = Math.floor(Math.abs(d[2].pos)) % 10;
-    const d4digit      = Math.floor(Math.abs(d[3].pos)) % 10;
+    /* PSI */
+    psiVel += (Math.random() - 0.5) * 0.04;
+    psiVel += (PSI_MEAN - psi) * 0.03;
+    psiVel *= 0.88;
+    if (Math.random() < 0.015) psiVel += (Math.random() - 0.5) * 0.18;
+    psi = Math.min(PSI_MAX + 0.3, Math.max(PSI_MIN - 0.3, psi + psiVel));
+    freqEl.textContent = `BOILER-PSI: ${psi.toFixed(3)} bar`;
+    if (psiNeedle && psiValueArc) {
+      const norm  = Math.min(1, Math.max(0, (psi - PSI_MIN) / (PSI_MAX - PSI_MIN)));
+      const angle = Math.PI * (1 - norm);
+      psiNeedle.setAttribute('x2', (17 + 11 * Math.cos(angle)).toFixed(1));
+      psiNeedle.setAttribute('y2', (18 - 11 * Math.sin(angle)).toFixed(1));
+      psiValueArc.setAttribute('stroke-dasharray',
+        `${(norm * PSI_ARC).toFixed(1)} ${PSI_ARC.toFixed(1)}`);
+    }
 
-    entEl.textContent = `FORGE-TEMP: ${sign}${intPart}.${d1digit}${d2digit}${d3digit}${d4digit} \u00b0C`;
-  }, ec.update_interval_ms);
+  }, 50);
 
+  /* slow loop — 1s — clock + reality index */
   function tick() {
     const now = new Date();
-    timeEl.textContent = `${pad(now.getUTCHours())}:${pad(now.getUTCMinutes())}:${pad(now.getUTCSeconds())} UTC`;
-    freq += (Math.random()-0.499)*0.004;
-    if (Math.random()<0.015) ridx=(ridx+Math.floor(Math.random()*3-1))&0xFFFF;
-    freqEl.textContent = `BOILER-PSI: ${freq.toFixed(3)} bar`;
-    ridxEl.textContent = `MANIFEST-NO: #${ridx.toString(16).toUpperCase().padStart(4,'0')}`;
+    timeEl.textContent =
+      `${pad(now.getUTCHours())}:${pad(now.getUTCMinutes())}:${pad(now.getUTCSeconds())} UTC`;
+    if (Math.random() < 0.015) ridx = (ridx + Math.floor(Math.random() * 3 - 1)) & 0xFFFF;
+    ridxEl.textContent = `MANIFEST-NO: #${ridx.toString(16).toUpperCase().padStart(4, '0')}`;
   }
   tick();
   setInterval(tick, 1000);
 }
+
 
 /* ============================================================
    UTILITY

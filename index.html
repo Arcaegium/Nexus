@@ -96,10 +96,20 @@
     .hud-val a { color:inherit; text-decoration:none; }
     .hud-val a:hover { opacity:1; }
     .hud-status { display:flex; align-items:center; gap:0.5rem; }
+    @keyframes statusPulse {
+      0%,100% { opacity:0.5; box-shadow:0 0 3px rgba(255,154,69,0.25); }
+      50%      { opacity:1;   box-shadow:0 0 8px var(--steam), 0 0 16px rgba(255,154,69,0.45); }
+    }
     .status-dot {
-      display:inline-block; width:5px; height:5px; border-radius:50%;
-      background:var(--steam); box-shadow:0 0 6px var(--steam-glow);
-      flex-shrink:0;
+      display:inline-block; width:6px; height:6px; border-radius:50%;
+      background:var(--steam); flex-shrink:0;
+      animation:statusPulse 1.9s ease-in-out infinite;
+    }
+    .hud-gauge-group {
+      display:flex; align-items:center; gap:4px; flex-shrink:0;
+    }
+    .hud-forge-status {
+      display:flex; align-items:center; gap:5px; flex-shrink:0;
     }
     .hud-favicon { width:18px; height:18px; opacity:0.85; flex-shrink:0; }
     .hud-chaos { }
@@ -423,10 +433,38 @@
       <span class="hud-val"><a href="https://arcaegium.com" target="_blank" rel="noopener">arcaegium.com</a></span>
     </div>
     <span class="hud-val live" id="liveTime">--:--:-- UTC</span>
-    <span class="hud-val" id="dimFreq">BOILER-PSI: ---.--- bar</span>
+    <span class="hud-gauge-group">
+      <svg id="psiGauge" width="34" height="20" viewBox="0 0 34 20" aria-hidden="true">
+        <path d="M3 18 A14 14 0 0 1 31 18" fill="none" stroke="#2a1a08" stroke-width="2.5"/>
+        <path id="psiValueArc" d="M3 18 A14 14 0 0 1 31 18" fill="none" stroke="#c8860a" stroke-width="2.5" stroke-dasharray="0 44" stroke-linecap="round"/>
+        <line x1="3"  y1="18" x2="4.8"  y2="15.8" stroke="#4a2d10" stroke-width="0.8"/>
+        <line x1="17" y1="4"  x2="17"   y2="6.5"  stroke="#4a2d10" stroke-width="0.8"/>
+        <line x1="31" y1="18" x2="29.2" y2="15.8" stroke="#4a2d10" stroke-width="0.8"/>
+        <line id="psiNeedle" x1="17" y1="18" x2="17" y2="5" stroke="#ff9a45" stroke-width="1.3" stroke-linecap="round"/>
+        <circle cx="17" cy="18" r="2" fill="#2a1a08" stroke="#c8860a" stroke-width="0.8"/>
+      </svg>
+      <span class="hud-val" id="dimFreq">BOILER-PSI: ---.--- bar</span>
+    </span>
     <span class="hud-val" id="realityIdx">MANIFEST-NO: #----</span>
-    <span class="hud-val" id="entropyVal">FORGE-TEMP: --.---- &deg;C</span>
-    <span class="hud-val" id="hudStatus"></span>
+    <span class="hud-gauge-group">
+      <span class="hud-val" id="entropyVal">FORGE-TEMP: ----.--- &deg;C</span>
+      <svg id="tempTherm" width="10" height="28" viewBox="0 0 10 28" aria-hidden="true">
+        <defs>
+          <clipPath id="hudThermClip"><rect x="3" y="2" width="4" height="16"/></clipPath>
+        </defs>
+        <rect x="3" y="2" width="4" height="16" rx="2" fill="#150a04" stroke="#4a2d10" stroke-width="0.5"/>
+        <rect id="thermFill" x="3" y="18" width="4" height="0" clip-path="url(#hudThermClip)" fill="#c8860a"/>
+        <circle cx="5" cy="23" r="4.2" fill="#150a04" stroke="#4a2d10" stroke-width="0.5"/>
+        <circle cx="5" cy="23" r="2.8" fill="#c8860a"/>
+        <line x1="7" y1="6"  x2="8.5" y2="6"  stroke="#4a2d10" stroke-width="0.5"/>
+        <line x1="7" y1="10" x2="8.5" y2="10" stroke="#4a2d10" stroke-width="0.5"/>
+        <line x1="7" y1="14" x2="8.5" y2="14" stroke="#4a2d10" stroke-width="0.5"/>
+      </svg>
+    </span>
+    <span class="hud-val hud-forge-status" id="hudStatus">
+      <span class="status-dot"></span>
+      <span id="forgeStatusText"></span>
+    </span>
   </div>
   <div class="page">
 
