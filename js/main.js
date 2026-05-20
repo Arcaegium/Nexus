@@ -767,13 +767,14 @@ function initWorkshopTitle() {
     oRtx.fillText('R', lR.x, BASELINE);
     /* rivets clipped to R shape via source-atop */
     oRtx.globalCompositeOperation = 'source-atop';
-    [[lR.x+lR.w*0.09, CAP_Y+SH*0.15],
-     [lR.x+lR.w*0.09, CAP_Y+SH*0.50],
-     [lR.x+lR.w*0.09, BASELINE-SH*0.12],
-     [lR.x+lR.w*0.45, CAP_Y+SH*0.10],
-     [lR.x+lR.w*0.68, CAP_Y+SH*0.28],
-     [lR.x+lR.w*0.52, CAP_Y+SH*0.56],
-     [lR.x+lR.w*0.76, BASELINE-SH*0.09],
+    [[lR.x+lR.w*0.085, CAP_Y+SH*0.12],   /* left stem top */
+     [lR.x+lR.w*0.085, CAP_Y+SH*0.40],   /* left stem mid */
+     [lR.x+lR.w*0.085, BASELINE-SH*0.14], /* left stem bottom */
+     [lR.x+lR.w*0.50,  CAP_Y+SH*0.05],   /* bowl top arc */
+     [lR.x+lR.w*0.74,  CAP_Y+SH*0.22],   /* bowl right arc */
+     [lR.x+lR.w*0.38,  CAP_Y+SH*0.50],   /* mid-height junction bar */
+     [lR.x+lR.w*0.62,  CAP_Y+SH*0.70],   /* leg mid */
+     [lR.x+lR.w*0.84,  BASELINE-SH*0.06], /* leg end */
     ].forEach(([rx, ry]) => {
       const rr = FS * 0.072;
       oRtx.fillStyle='#141008'; oRtx.beginPath(); oRtx.arc(rx,ry,rr,0,Math.PI*2); oRtx.fill();
