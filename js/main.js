@@ -748,6 +748,41 @@ function initWorkshopTitle() {
     const BASELINE = CH * 0.83, CAP_Y = BASELINE - FS * 0.86, SH = BASELINE - CAP_Y;
     const [lW, lO1, lR, lK, lS, lH, lO2, lP] = lms;
 
+    /* Pre-render iron R once (heavy stroke outline + source-atop rivets) */
+    const oscR = document.createElement('canvas');
+    oscR.width = W; oscR.height = CH;
+    const oRtx = oscR.getContext('2d');
+    oRtx.font = `900 ${FS}px Orbitron, monospace`;
+    oRtx.textBaseline = 'alphabetic'; oRtx.textAlign = 'left';
+    /* thick dark stroke first → fills inside will cover interior, leaving heavy cast-iron edge */
+    oRtx.lineWidth  = FS * 0.22; oRtx.lineJoin = 'round';
+    oRtx.strokeStyle= '#0a0804';
+    oRtx.strokeText('R', lR.x, BASELINE);
+    /* iron gradient fill */
+    const _rGrad = oRtx.createLinearGradient(0, CAP_Y, 0, BASELINE);
+    _rGrad.addColorStop(0,   '#4a3824');
+    _rGrad.addColorStop(0.5, '#3a2c1c');
+    _rGrad.addColorStop(1,   '#1e1610');
+    oRtx.fillStyle = _rGrad;
+    oRtx.fillText('R', lR.x, BASELINE);
+    /* rivets clipped to R shape via source-atop */
+    oRtx.globalCompositeOperation = 'source-atop';
+    [[lR.x+lR.w*0.09, CAP_Y+SH*0.15],
+     [lR.x+lR.w*0.09, CAP_Y+SH*0.50],
+     [lR.x+lR.w*0.09, BASELINE-SH*0.12],
+     [lR.x+lR.w*0.45, CAP_Y+SH*0.10],
+     [lR.x+lR.w*0.68, CAP_Y+SH*0.28],
+     [lR.x+lR.w*0.52, CAP_Y+SH*0.56],
+     [lR.x+lR.w*0.76, BASELINE-SH*0.09],
+    ].forEach(([rx, ry]) => {
+      const rr = FS * 0.072;
+      oRtx.fillStyle='#141008'; oRtx.beginPath(); oRtx.arc(rx,ry,rr,0,Math.PI*2); oRtx.fill();
+      oRtx.fillStyle=IR_L;      oRtx.beginPath(); oRtx.arc(rx,ry,rr*0.74,0,Math.PI*2); oRtx.fill();
+      oRtx.fillStyle='#5c4432'; oRtx.beginPath(); oRtx.arc(rx-rr*0.18,ry-rr*0.22,rr*0.30,0,Math.PI*2); oRtx.fill();
+      oRtx.fillStyle=IR;        oRtx.beginPath(); oRtx.arc(rx,ry,rr*0.18,0,Math.PI*2); oRtx.fill();
+    });
+    oRtx.globalCompositeOperation = 'source-over';
+
     const O_R = FS * 0.40, O_Y = BASELINE - O_R - 1;
     const P_R = FS * 0.26, P_CX = lP.x + lP.w * 0.60, P_Y = CAP_Y + SH * 0.30;
     const S_R = FS * 0.14, SG1Y = CAP_Y + SH * 0.28, SG2Y = CAP_Y + SH * 0.72;
@@ -981,9 +1016,9 @@ function initWorkshopTitle() {
       pts.push({x: gs[9].x+cn, y: gs[9].y});
       pts.push(...arcPts(gs[9].x, gs[9].y, cn, 0, Math.PI, 8));
 
-      /* → gear 8 (K centre) — up diagonal; arc CCW over top */
+      /* → gear 8 (K centre) — up diagonal; arc CCW over top to 12 o'clock */
       pts.push({x: gs[8].x+cn, y: gs[8].y});
-      pts.push(...arcPts(gs[8].x, gs[8].y, cn, 0, -Math.PI, 8));
+      pts.push(...arcPts(gs[8].x, gs[8].y, cn, 0, -Math.PI*0.5, 8));
 
       /* → O1 right side (behind R) */
       pts.push({x: lO1.cx+CR_o1, y: O_Y});
@@ -1077,9 +1112,9 @@ function initWorkshopTitle() {
           ctx.arc(0, 0, pwR*0.86, a1, a2);
           ctx.arc(0, 0, pwR*0.20, a2, a1, true);
           ctx.closePath();
-          ctx.fillStyle = i%2===0 ? IR : '#201810';
+          ctx.fillStyle = i%2===0 ? '#a04e18' : '#6b3010';
           ctx.fill();
-          ctx.strokeStyle = IR_L; ctx.lineWidth = 0.6; ctx.stroke();
+          ctx.strokeStyle = '#d07828'; ctx.lineWidth = 0.6; ctx.stroke();
         }
         ctx.fillStyle = BR_D; ctx.beginPath(); ctx.arc(0,0,FS*0.07,0,Math.PI*2); ctx.fill();
         ctx.fillStyle = BR;   ctx.beginPath(); ctx.arc(0,0,FS*0.035,0,Math.PI*2); ctx.fill();
@@ -1176,53 +1211,27 @@ function initWorkshopTitle() {
         ctx.fillStyle = BR_L;
         ctx.fillRect(sadX + 2, barTopY - sadH + 1, sadW - 4, Math.round(sadH * 0.20));
       }
-      ctx.font=`900 ${FS}px Orbitron, monospace`;
-      ctx.textBaseline='alphabetic'; ctx.textAlign='left';
-      /* R is iron, not bone — same material as rivets */
-      ctx.fillStyle = IR_L;
+      ctx.save();
       ctx.shadowColor='rgba(200,136,10,0.38)'; ctx.shadowBlur=FS*0.10;
-      ctx.fillText('R', lR.x, BASELINE);
-      ctx.shadowBlur=0;
-
-      /* ── 11. Iron-on-iron rivets on R ── */
-      {
-        /* Large structural bolt heads — iron on iron, raised dome look */
-        const rv = (rx, ry) => {
-          const rr = FS * 0.068;
-          ctx.fillStyle='#1a1008';  /* shadow ring — recessed edge */
-          ctx.beginPath(); ctx.arc(rx, ry, rr, 0, Math.PI*2); ctx.fill();
-          ctx.fillStyle=IR_L;       /* dome face — raised, catches light */
-          ctx.beginPath(); ctx.arc(rx, ry, rr*0.76, 0, Math.PI*2); ctx.fill();
-          ctx.fillStyle='#604838';  /* upper highlight — dome 3-D */
-          ctx.beginPath(); ctx.arc(rx-rr*0.18, ry-rr*0.22, rr*0.28, 0, Math.PI*2); ctx.fill();
-          ctx.fillStyle=IR;         /* center socket */
-          ctx.beginPath(); ctx.arc(rx, ry, rr*0.20, 0, Math.PI*2); ctx.fill();
-        };
-        const rs = lR.x + lR.w * 0.10;   /* left stem center */
-        rv(rs, CAP_Y + SH*0.15);          /* stem top */
-        rv(rs, CAP_Y + SH*0.50);          /* stem mid */
-        rv(rs, BASELINE - SH*0.12);       /* stem bottom */
-        rv(lR.x + lR.w*0.58, CAP_Y + SH*0.12);   /* bowl top */
-        rv(lR.x + lR.w*0.70, CAP_Y + SH*0.35);   /* bowl right */
-        rv(lR.x + lR.w*0.78, BASELINE - SH*0.08); /* leg tip */
-      }
+      ctx.drawImage(oscR, 0, 0);
+      ctx.shadowBlur=0; ctx.restore();
 
       /* ── 12. Tesla coil on K upper arm ── */
       {
-        const antX  = lK.x + lK.w * 0.68;
-        const antBY = CAP_Y;               /* base at letter top */
-        const antH  = SH * 0.38;          /* rises well above title */
+        const antX  = lK.x + lK.w * 0.82;   /* right-side of K upper arm */
+        const antBY = CAP_Y + SH * 0.12;     /* base inside K letter */
+        const antH  = SH * 0.22;             /* rod height above K */
         const antTY = antBY - antH;
         const ballR = FS * 0.065;
         const PERIOD = 2.8, cycle = t % PERIOD;
         const charge = cycle < 2.0 ? cycle/2.0 : Math.max(0, 1-(cycle-2.0)/0.8);
         const firing = cycle >= 1.8 && cycle < 2.4;
 
-        /* antenna rod — dark iron pillar */
+        /* antenna rod — brass */
         ctx.lineCap='round';
-        ctx.strokeStyle='#303030'; ctx.lineWidth=FS*0.030;
+        ctx.strokeStyle=BR_D; ctx.lineWidth=FS*0.025;
         ctx.beginPath(); ctx.moveTo(antX,antBY); ctx.lineTo(antX,antTY+ballR); ctx.stroke();
-        ctx.strokeStyle='#686868'; ctx.lineWidth=FS*0.012;
+        ctx.strokeStyle=BR; ctx.lineWidth=FS*0.010;
         ctx.beginPath(); ctx.moveTo(antX,antBY); ctx.lineTo(antX,antTY+ballR); ctx.stroke();
 
         /* charge glow — plasma corona */
