@@ -1183,7 +1183,10 @@ function initWorkshopTitle() {
       if (titleRImg && titleRImg.complete && titleRImg.naturalWidth > 0) {
         ctx.save();
         ctx.shadowColor='rgba(200,136,10,0.38)'; ctx.shadowBlur=FS*0.10;
-        ctx.drawImage(titleRImg, lR.x, CAP_Y - FS*0.08, lR.w, SH + FS*0.12);
+        const rH  = SH * 0.90;
+        const rW  = lR.w;
+        const rCX = (lO1.x + lO1.w + lK.x) / 2;
+        ctx.drawImage(titleRImg, rCX - rW/2, BASELINE - rH, rW, rH);
         ctx.shadowBlur=0; ctx.restore();
       } else {
         /* fallback: plain iron text while image loads */
