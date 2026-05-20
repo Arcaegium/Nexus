@@ -942,13 +942,13 @@ function initWorkshopTitle() {
       /* g14: approach from right (3 o'clock), arc OVER top CCW to 9 o'clock — mirrors g1 */
       pts.push({x: gs[14].x + cn14, y: gs[14].y});
       pts.push(...arcPts(gs[14].x, gs[14].y, cn14, 0, -Math.PI, 8));
-      /* g13: approach at 3 o'clock (from g14), arc CCW over top to 11 o'clock */
+      /* g13: approach at 3 o'clock (from g14), arc CCW over top to 10 o'clock */
       pts.push({x: gs[13].x + c13, y: gs[13].y});
-      pts.push(...arcPts(gs[13].x, gs[13].y, c13, 0, -2*Math.PI/3, 10));
-      /* g13 11 o'clock exit → P at 3 o'clock (diagonal down-left) */
-      pts.push({x: P_CX + P_R + 2, y: P_Y});
-      /* arc P: 3 o'clock → 10 o'clock CCW (over top, continuing to upper-left) */
-      pts.push(...arcPts(P_CX, P_Y, P_R+2, 0, -5*Math.PI/6, 12));
+      pts.push(...arcPts(gs[13].x, gs[13].y, c13, 0, -5*Math.PI/6, 10));
+      /* g13 10 o'clock exit → P at 2 o'clock */
+      pts.push({x: P_CX + (P_R+2)*0.866, y: P_Y - (P_R+2)*0.5});
+      /* arc P: 2 o'clock → 10 o'clock CCW (over top) */
+      pts.push(...arcPts(P_CX, P_Y, P_R+2, -Math.PI/6, -5*Math.PI/6, 12));
       /* straight from P's 10 o'clock to O2's 2 o'clock */
       pts.push({x: lO2.cx + (O_R+2)*Math.cos(-Math.PI/6), y: O_Y + (O_R+2)*Math.sin(-Math.PI/6)});
       /* arc OVER O2: 2 o'clock → top → 9 o'clock CCW */
@@ -1064,6 +1064,28 @@ function initWorkshopTitle() {
         ? Math.max(0, 1 - Math.pow((t - hammerStartT) / HAMMER_DUR, 1.8))
         : pistonStep / N_PISTON_STEPS;
 
+      /* ── 0a. turbine rotor behind K (driven by g8) ── */
+      {
+        const pwX = gs[8].x, pwY = gs[8].y, pwR = SH * 0.28;
+        const g8A = -t * ω * (O_R / GR);
+        const N   = 10;
+        ctx.save(); ctx.globalAlpha = 0.62; ctx.translate(pwX, pwY);
+        for (let i = 0; i < N; i++) {
+          const a1 = g8A + (i / N) * Math.PI * 2, a2 = a1 + 0.20;
+          ctx.beginPath();
+          ctx.moveTo(Math.cos(a1)*pwR*0.20, Math.sin(a1)*pwR*0.20);
+          ctx.arc(0, 0, pwR*0.86, a1, a2);
+          ctx.arc(0, 0, pwR*0.20, a2, a1, true);
+          ctx.closePath();
+          ctx.fillStyle = i%2===0 ? IR : '#201810';
+          ctx.fill();
+          ctx.strokeStyle = IR_L; ctx.lineWidth = 0.6; ctx.stroke();
+        }
+        ctx.fillStyle = BR_D; ctx.beginPath(); ctx.arc(0,0,FS*0.07,0,Math.PI*2); ctx.fill();
+        ctx.fillStyle = BR;   ctx.beginPath(); ctx.arc(0,0,FS*0.035,0,Math.PI*2); ctx.fill();
+        ctx.globalAlpha = 1; ctx.restore();
+      }
+
       ctx.font=`900 ${FS}px Orbitron, monospace`;
       ctx.textBaseline='alphabetic'; ctx.textAlign='left'; ctx.fillStyle=TX;
       ctx.shadowColor='rgba(200,136,10,0.38)'; ctx.shadowBlur=FS*0.10;
@@ -1159,6 +1181,80 @@ function initWorkshopTitle() {
       ctx.shadowColor='rgba(200,136,10,0.38)'; ctx.shadowBlur=FS*0.10;
       ctx.fillText('R', lR.x, BASELINE);
       ctx.shadowBlur=0;
+
+      /* ── 11. Rivets on R ── */
+      {
+        const rv = (rx, ry) => {
+          ctx.fillStyle=BR_D; ctx.beginPath(); ctx.arc(rx,ry,FS*0.028,0,Math.PI*2); ctx.fill();
+          ctx.fillStyle=BR;   ctx.beginPath(); ctx.arc(rx,ry,FS*0.018,0,Math.PI*2); ctx.fill();
+          ctx.fillStyle=BR_D; ctx.beginPath(); ctx.arc(rx,ry,FS*0.007,0,Math.PI*2); ctx.fill();
+        };
+        const rs = lR.x + lR.w * 0.09;
+        rv(rs, CAP_Y + SH*0.08);  rv(rs, CAP_Y + SH*0.32);
+        rv(rs, CAP_Y + SH*0.62);  rv(rs, BASELINE - SH*0.07);
+        rv(lR.x + lR.w*0.50, CAP_Y + SH*0.06);
+        rv(lR.x + lR.w*0.82, CAP_Y + SH*0.25);
+        rv(lR.x + lR.w*0.55, CAP_Y + SH*0.62);
+        rv(lR.x + lR.w*0.85, BASELINE - SH*0.06);
+      }
+
+      /* ── 12. Tesla coil on K upper arm ── */
+      {
+        const antX  = lK.x + lK.w * 0.62;
+        const antBY = CAP_Y + SH * 0.09;
+        const antH  = SH * 0.30;
+        const antTY = antBY - antH;
+        const ballR = FS * 0.055;
+        const PERIOD = 3.0, cycle = t % PERIOD;
+        const charge = cycle < 2.1 ? cycle/2.1 : Math.max(0, 1-(cycle-2.1)/0.9);
+        const firing = cycle >= 2.1 && cycle < 2.6;
+
+        /* antenna rod */
+        ctx.lineCap='round';
+        ctx.strokeStyle=BR_D; ctx.lineWidth=FS*0.025;
+        ctx.beginPath(); ctx.moveTo(antX,antBY); ctx.lineTo(antX,antTY); ctx.stroke();
+        ctx.strokeStyle=BR; ctx.lineWidth=FS*0.010;
+        ctx.beginPath(); ctx.moveTo(antX,antBY); ctx.lineTo(antX,antTY); ctx.stroke();
+
+        /* charge glow */
+        if (charge > 0.08) {
+          const gR = ballR*(1 + charge*2.8);
+          const grd = ctx.createRadialGradient(antX,antTY,ballR*0.4,antX,antTY,gR);
+          grd.addColorStop(0, `rgba(255,220,90,${(charge*0.65).toFixed(2)})`);
+          grd.addColorStop(1, 'rgba(255,140,20,0)');
+          ctx.fillStyle=grd;
+          ctx.beginPath(); ctx.arc(antX,antTY,gR,0,Math.PI*2); ctx.fill();
+        }
+
+        /* ball */
+        ctx.fillStyle=BR_D; ctx.beginPath(); ctx.arc(antX,antTY,ballR+1,0,Math.PI*2); ctx.fill();
+        ctx.fillStyle=BR;   ctx.beginPath(); ctx.arc(antX,antTY,ballR,0,Math.PI*2);   ctx.fill();
+        ctx.fillStyle=BR_L; ctx.beginPath(); ctx.arc(antX-ballR*0.3,antTY-ballR*0.3,ballR*0.32,0,Math.PI*2); ctx.fill();
+
+        /* lightning arcs */
+        if (firing) {
+          const seed = Math.floor(t / PERIOD);
+          const sr = n => { const v=Math.sin(seed*137.3+n*53.7)*43758.5; return v-Math.floor(v); };
+          for (let bolt = 0; bolt < 3; bolt++) {
+            const ang = sr(bolt*10)*Math.PI*2;
+            const len = FS*(0.45 + sr(bolt*10+1)*0.65);
+            const ex = antX + Math.cos(ang)*len, ey = antTY + Math.sin(ang)*len;
+            const pts = [[antX, antTY]];
+            for (let s=1; s<=3; s++) {
+              const f=s/4;
+              pts.push([antX+(ex-antX)*f+(sr(bolt*10+s*2)-0.5)*FS*0.20,
+                         antTY+(ey-antTY)*f+(sr(bolt*10+s*2+1)-0.5)*FS*0.20]);
+            }
+            pts.push([ex, ey]);
+            ctx.strokeStyle='rgba(180,240,255,0.22)'; ctx.lineWidth=6;
+            ctx.beginPath(); ctx.moveTo(...pts[0]);
+            pts.slice(1).forEach(p=>ctx.lineTo(...p)); ctx.stroke();
+            ctx.strokeStyle='rgba(230,255,255,0.90)'; ctx.lineWidth=1.2;
+            ctx.beginPath(); ctx.moveTo(...pts[0]);
+            pts.slice(1).forEach(p=>ctx.lineTo(...p)); ctx.stroke();
+          }
+        }
+      }
 
       raf = requestAnimationFrame(frame);
     }
