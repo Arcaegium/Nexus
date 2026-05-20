@@ -1306,7 +1306,6 @@ function initCardScrambles() {
   const POOL = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 #&*%+/^~!?-';
   const FLIP_MS   = 80;   /* ms per idle flip */
   const FAST_MS   = 25;   /* ms per flip when resolving on hover */
-  const PAIR_DELAY= 90;   /* ms between resolving pairs — targets ~1s for 20-char titles */
 
   /* strip accents so É → E etc — real split-flap boards are ASCII only */
   function normalise(str) {
@@ -1385,22 +1384,22 @@ function initCardScrambles() {
       }, FAST_MS);
     }
 
-    function resolveOutwardIn() {
+    function resolveStagger() {
       resolveTimers = [];
-      let lo = 0, hi = state.length - 1, step = 0;
-      while (lo <= hi) {
-        const delay = step * PAIR_DELAY;
-        const a = lo, b = hi;
-        resolveTimers.push(setTimeout(() => resolveChar(state[a]), delay));
-        if (b !== a) resolveTimers.push(setTimeout(() => resolveChar(state[b]), delay));
-        lo++; hi--; step++;
-      }
+      state.forEach(s => {
+        /* ~20% of characters are stragglers — they linger up to the 1s mark */
+        const straggler = Math.random() < 0.20;
+        const delay = straggler
+          ? 700 + Math.random() * 200   /* 700–900ms start */
+          : Math.random() * 600;         /* 0–600ms start   */
+        resolveTimers.push(setTimeout(() => resolveChar(s), delay));
+      });
     }
 
     card.addEventListener('mouseenter', () => {
       if (hovered) return;
       hovered = true;
-      resolveOutwardIn();
+      resolveStagger();
     });
 
     card.addEventListener('mouseleave', () => {
