@@ -748,41 +748,8 @@ function initWorkshopTitle() {
     const BASELINE = CH * 0.83, CAP_Y = BASELINE - FS * 0.86, SH = BASELINE - CAP_Y;
     const [lW, lO1, lR, lK, lS, lH, lO2, lP] = lms;
 
-    /* Pre-render iron R once (heavy stroke outline + source-atop rivets) */
-    const oscR = document.createElement('canvas');
-    oscR.width = W; oscR.height = CH;
-    const oRtx = oscR.getContext('2d');
-    oRtx.font = `900 ${FS}px Orbitron, monospace`;
-    oRtx.textBaseline = 'alphabetic'; oRtx.textAlign = 'left';
-    /* thick dark stroke first → fills inside will cover interior, leaving heavy cast-iron edge */
-    oRtx.lineWidth  = FS * 0.05; oRtx.lineJoin = 'round';
-    oRtx.strokeStyle= '#0a0804';
-    oRtx.strokeText('R', lR.x, BASELINE);
-    /* iron gradient fill */
-    const _rGrad = oRtx.createLinearGradient(0, CAP_Y, 0, BASELINE);
-    _rGrad.addColorStop(0,   '#4a3824');
-    _rGrad.addColorStop(0.5, '#3a2c1c');
-    _rGrad.addColorStop(1,   '#1e1610');
-    oRtx.fillStyle = _rGrad;
-    oRtx.fillText('R', lR.x, BASELINE);
-    /* rivets clipped to R shape via source-atop */
-    oRtx.globalCompositeOperation = 'source-atop';
-    [[lR.x+lR.w*0.085, CAP_Y+SH*0.12],   /* left stem top */
-     [lR.x+lR.w*0.085, CAP_Y+SH*0.40],   /* left stem mid */
-     [lR.x+lR.w*0.085, BASELINE-SH*0.14], /* left stem bottom */
-     [lR.x+lR.w*0.50,  CAP_Y+SH*0.05],   /* bowl top arc */
-     [lR.x+lR.w*0.74,  CAP_Y+SH*0.22],   /* bowl right arc */
-     [lR.x+lR.w*0.38,  CAP_Y+SH*0.50],   /* mid-height junction bar */
-     [lR.x+lR.w*0.62,  CAP_Y+SH*0.70],   /* leg mid */
-     [lR.x+lR.w*0.84,  BASELINE-SH*0.06], /* leg end */
-    ].forEach(([rx, ry]) => {
-      const rr = FS * 0.072;
-      oRtx.fillStyle='#141008'; oRtx.beginPath(); oRtx.arc(rx,ry,rr,0,Math.PI*2); oRtx.fill();
-      oRtx.fillStyle=IR_L;      oRtx.beginPath(); oRtx.arc(rx,ry,rr*0.74,0,Math.PI*2); oRtx.fill();
-      oRtx.fillStyle='#5c4432'; oRtx.beginPath(); oRtx.arc(rx-rr*0.18,ry-rr*0.22,rr*0.30,0,Math.PI*2); oRtx.fill();
-      oRtx.fillStyle=IR;        oRtx.beginPath(); oRtx.arc(rx,ry,rr*0.18,0,Math.PI*2); oRtx.fill();
-    });
-    oRtx.globalCompositeOperation = 'source-over';
+    /* Title_R: AI-generated iron R image — loaded from assets/Title_R.png */
+    const titleRImg = document.getElementById('titleR');
 
     const O_R = FS * 0.40, O_Y = BASELINE - O_R - 1;
     const P_R = FS * 0.26, P_CX = lP.x + lP.w * 0.60, P_Y = CAP_Y + SH * 0.30;
@@ -1212,10 +1179,21 @@ function initWorkshopTitle() {
         ctx.fillStyle = BR_L;
         ctx.fillRect(sadX + 2, barTopY - sadH + 1, sadW - 4, Math.round(sadH * 0.20));
       }
-      ctx.save();
-      ctx.shadowColor='rgba(200,136,10,0.38)'; ctx.shadowBlur=FS*0.10;
-      ctx.drawImage(oscR, 0, 0);
-      ctx.shadowBlur=0; ctx.restore();
+      /* ── 10. R — AI-generated iron plate image ── */
+      if (titleRImg && titleRImg.complete && titleRImg.naturalWidth > 0) {
+        ctx.save();
+        ctx.shadowColor='rgba(200,136,10,0.38)'; ctx.shadowBlur=FS*0.10;
+        ctx.drawImage(titleRImg, lR.x, CAP_Y - FS*0.08, lR.w, SH + FS*0.12);
+        ctx.shadowBlur=0; ctx.restore();
+      } else {
+        /* fallback: plain iron text while image loads */
+        ctx.font=`900 ${FS}px Orbitron, monospace`;
+        ctx.textBaseline='alphabetic'; ctx.textAlign='left';
+        ctx.fillStyle=IR_L;
+        ctx.shadowColor='rgba(200,136,10,0.38)'; ctx.shadowBlur=FS*0.10;
+        ctx.fillText('R', lR.x, BASELINE);
+        ctx.shadowBlur=0;
+      }
 
       /* ── 12. Tesla coil on K upper arm ── */
       {
