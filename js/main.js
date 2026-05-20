@@ -1066,7 +1066,7 @@ function initWorkshopTitle() {
 
       /* ── 0a. turbine rotor behind K (driven by g8) ── */
       {
-        const pwX = gs[8].x, pwY = gs[8].y, pwR = SH * 0.28;
+        const pwX = gs[8].x, pwY = gs[8].y, pwR = FS * 0.40;
         const g8A = -t * ω * (O_R / GR);
         const N   = 10;
         ctx.save(); ctx.globalAlpha = 0.62; ctx.translate(pwX, pwY);
@@ -1177,82 +1177,119 @@ function initWorkshopTitle() {
         ctx.fillRect(sadX + 2, barTopY - sadH + 1, sadW - 4, Math.round(sadH * 0.20));
       }
       ctx.font=`900 ${FS}px Orbitron, monospace`;
-      ctx.textBaseline='alphabetic'; ctx.textAlign='left'; ctx.fillStyle=TX;
+      ctx.textBaseline='alphabetic'; ctx.textAlign='left';
+      /* R is iron, not bone — same material as rivets */
+      ctx.fillStyle = IR_L;
       ctx.shadowColor='rgba(200,136,10,0.38)'; ctx.shadowBlur=FS*0.10;
       ctx.fillText('R', lR.x, BASELINE);
       ctx.shadowBlur=0;
 
-      /* ── 11. Rivets on R ── */
+      /* ── 11. Iron-on-iron rivets on R ── */
       {
+        /* Large structural bolt heads — iron on iron, raised dome look */
         const rv = (rx, ry) => {
-          ctx.fillStyle=BR_D; ctx.beginPath(); ctx.arc(rx,ry,FS*0.028,0,Math.PI*2); ctx.fill();
-          ctx.fillStyle=BR;   ctx.beginPath(); ctx.arc(rx,ry,FS*0.018,0,Math.PI*2); ctx.fill();
-          ctx.fillStyle=BR_D; ctx.beginPath(); ctx.arc(rx,ry,FS*0.007,0,Math.PI*2); ctx.fill();
+          const rr = FS * 0.068;
+          ctx.fillStyle='#1a1008';  /* shadow ring — recessed edge */
+          ctx.beginPath(); ctx.arc(rx, ry, rr, 0, Math.PI*2); ctx.fill();
+          ctx.fillStyle=IR_L;       /* dome face — raised, catches light */
+          ctx.beginPath(); ctx.arc(rx, ry, rr*0.76, 0, Math.PI*2); ctx.fill();
+          ctx.fillStyle='#604838';  /* upper highlight — dome 3-D */
+          ctx.beginPath(); ctx.arc(rx-rr*0.18, ry-rr*0.22, rr*0.28, 0, Math.PI*2); ctx.fill();
+          ctx.fillStyle=IR;         /* center socket */
+          ctx.beginPath(); ctx.arc(rx, ry, rr*0.20, 0, Math.PI*2); ctx.fill();
         };
-        const rs = lR.x + lR.w * 0.09;
-        rv(rs, CAP_Y + SH*0.08);  rv(rs, CAP_Y + SH*0.32);
-        rv(rs, CAP_Y + SH*0.62);  rv(rs, BASELINE - SH*0.07);
-        rv(lR.x + lR.w*0.50, CAP_Y + SH*0.06);
-        rv(lR.x + lR.w*0.82, CAP_Y + SH*0.25);
-        rv(lR.x + lR.w*0.55, CAP_Y + SH*0.62);
-        rv(lR.x + lR.w*0.85, BASELINE - SH*0.06);
+        const rs = lR.x + lR.w * 0.10;   /* left stem center */
+        rv(rs, CAP_Y + SH*0.15);          /* stem top */
+        rv(rs, CAP_Y + SH*0.50);          /* stem mid */
+        rv(rs, BASELINE - SH*0.12);       /* stem bottom */
+        rv(lR.x + lR.w*0.58, CAP_Y + SH*0.12);   /* bowl top */
+        rv(lR.x + lR.w*0.70, CAP_Y + SH*0.35);   /* bowl right */
+        rv(lR.x + lR.w*0.78, BASELINE - SH*0.08); /* leg tip */
       }
 
       /* ── 12. Tesla coil on K upper arm ── */
       {
-        const antX  = lK.x + lK.w * 0.62;
-        const antBY = CAP_Y + SH * 0.09;
-        const antH  = SH * 0.30;
+        const antX  = lK.x + lK.w * 0.68;
+        const antBY = CAP_Y;               /* base at letter top */
+        const antH  = SH * 0.38;          /* rises well above title */
         const antTY = antBY - antH;
-        const ballR = FS * 0.055;
-        const PERIOD = 3.0, cycle = t % PERIOD;
-        const charge = cycle < 2.1 ? cycle/2.1 : Math.max(0, 1-(cycle-2.1)/0.9);
-        const firing = cycle >= 2.1 && cycle < 2.6;
+        const ballR = FS * 0.065;
+        const PERIOD = 2.8, cycle = t % PERIOD;
+        const charge = cycle < 2.0 ? cycle/2.0 : Math.max(0, 1-(cycle-2.0)/0.8);
+        const firing = cycle >= 1.8 && cycle < 2.4;
 
-        /* antenna rod */
+        /* antenna rod — dark iron pillar */
         ctx.lineCap='round';
-        ctx.strokeStyle=BR_D; ctx.lineWidth=FS*0.025;
-        ctx.beginPath(); ctx.moveTo(antX,antBY); ctx.lineTo(antX,antTY); ctx.stroke();
-        ctx.strokeStyle=BR; ctx.lineWidth=FS*0.010;
-        ctx.beginPath(); ctx.moveTo(antX,antBY); ctx.lineTo(antX,antTY); ctx.stroke();
+        ctx.strokeStyle='#303030'; ctx.lineWidth=FS*0.030;
+        ctx.beginPath(); ctx.moveTo(antX,antBY); ctx.lineTo(antX,antTY+ballR); ctx.stroke();
+        ctx.strokeStyle='#686868'; ctx.lineWidth=FS*0.012;
+        ctx.beginPath(); ctx.moveTo(antX,antBY); ctx.lineTo(antX,antTY+ballR); ctx.stroke();
 
-        /* charge glow */
-        if (charge > 0.08) {
-          const gR = ballR*(1 + charge*2.8);
-          const grd = ctx.createRadialGradient(antX,antTY,ballR*0.4,antX,antTY,gR);
-          grd.addColorStop(0, `rgba(255,220,90,${(charge*0.65).toFixed(2)})`);
-          grd.addColorStop(1, 'rgba(255,140,20,0)');
+        /* charge glow — plasma corona */
+        if (charge > 0.06) {
+          const gR = ballR*(1.2 + charge*3.5);
+          const grd = ctx.createRadialGradient(antX,antTY,ballR*0.3,antX,antTY,gR);
+          grd.addColorStop(0,   `rgba(220,180,255,${(charge*0.55).toFixed(2)})`);
+          grd.addColorStop(0.5, `rgba(180,60,255,${(charge*0.25).toFixed(2)})`);
+          grd.addColorStop(1,   'rgba(100,0,200,0)');
           ctx.fillStyle=grd;
           ctx.beginPath(); ctx.arc(antX,antTY,gR,0,Math.PI*2); ctx.fill();
         }
 
-        /* ball */
-        ctx.fillStyle=BR_D; ctx.beginPath(); ctx.arc(antX,antTY,ballR+1,0,Math.PI*2); ctx.fill();
-        ctx.fillStyle=BR;   ctx.beginPath(); ctx.arc(antX,antTY,ballR,0,Math.PI*2);   ctx.fill();
-        ctx.fillStyle=BR_L; ctx.beginPath(); ctx.arc(antX-ballR*0.3,antTY-ballR*0.3,ballR*0.32,0,Math.PI*2); ctx.fill();
+        /* silver/gray toroidal ball terminal */
+        const ballGrd = ctx.createRadialGradient(antX-ballR*0.3,antTY-ballR*0.3,ballR*0.05,antX,antTY,ballR);
+        ballGrd.addColorStop(0, '#e0e0e0');  /* bright silver highlight */
+        ballGrd.addColorStop(0.4,'#909090'); /* mid silver */
+        ballGrd.addColorStop(1, '#303030');  /* dark edge */
+        ctx.fillStyle='#282828';
+        ctx.beginPath(); ctx.arc(antX,antTY,ballR+1.5,0,Math.PI*2); ctx.fill(); /* dark rim */
+        ctx.fillStyle=ballGrd;
+        ctx.beginPath(); ctx.arc(antX,antTY,ballR,0,Math.PI*2); ctx.fill();
 
-        /* lightning arcs */
+        /* plasma arcs — upward only, white closer, magenta/purple further */
         if (firing) {
           const seed = Math.floor(t / PERIOD);
           const sr = n => { const v=Math.sin(seed*137.3+n*53.7)*43758.5; return v-Math.floor(v); };
-          for (let bolt = 0; bolt < 3; bolt++) {
-            const ang = sr(bolt*10)*Math.PI*2;
-            const len = FS*(0.45 + sr(bolt*10+1)*0.65);
-            const ex = antX + Math.cos(ang)*len, ey = antTY + Math.sin(ang)*len;
+
+          /* arc spec: [colorIdx, lengthScale] — 0=white,1=magenta,2=purple */
+          const arcs = [
+            [0, 0.28],[0, 0.35],[0, 0.22],   /* white — short, close */
+            [1, 0.55],[1, 0.68],              /* magenta — medium */
+            [2, 0.80],[2, 0.95],              /* purple — far */
+          ];
+          const palette = [
+            /* white */  {glow:'rgba(220,235,255,0.20)', core:'rgba(245,252,255,0.95)', lw:[6,1.2]},
+            /* magenta */{glow:'rgba(255,30,200,0.18)',  core:'rgba(255,80,240,0.88)',  lw:[7,1.4]},
+            /* purple */ {glow:'rgba(160,0,255,0.16)',   core:'rgba(200,100,255,0.82)', lw:[8,1.5]},
+          ];
+
+          arcs.forEach(([ci, lenScale], i) => {
+            const col = palette[ci];
+            /* angle restricted to upper hemisphere: -0.05π to -0.95π */
+            const ang = -Math.PI * (0.05 + sr(i*10) * 0.90);
+            const len = FS * (lenScale + sr(i*10+1) * 0.3);
+            const ex  = antX + Math.cos(ang)*len;
+            const ey  = antTY + Math.sin(ang)*len;  /* always negative (up) */
+
+            /* 5-point zigzag for dendritic look */
             const pts = [[antX, antTY]];
-            for (let s=1; s<=3; s++) {
-              const f=s/4;
-              pts.push([antX+(ex-antX)*f+(sr(bolt*10+s*2)-0.5)*FS*0.20,
-                         antTY+(ey-antTY)*f+(sr(bolt*10+s*2+1)-0.5)*FS*0.20]);
+            for (let s=1; s<=4; s++) {
+              const f=s/5, perp=FS*(0.08+lenScale*0.15);
+              pts.push([
+                antX+(ex-antX)*f + (sr(i*10+s*2)-0.5)*perp,
+                antTY+(ey-antTY)*f + (sr(i*10+s*2+1)-0.5)*perp*0.6,
+              ]);
             }
             pts.push([ex, ey]);
-            ctx.strokeStyle='rgba(180,240,255,0.22)'; ctx.lineWidth=6;
+
+            ctx.strokeStyle=col.glow; ctx.lineWidth=col.lw[0];
             ctx.beginPath(); ctx.moveTo(...pts[0]);
             pts.slice(1).forEach(p=>ctx.lineTo(...p)); ctx.stroke();
-            ctx.strokeStyle='rgba(230,255,255,0.90)'; ctx.lineWidth=1.2;
+
+            ctx.strokeStyle=col.core; ctx.lineWidth=col.lw[1];
             ctx.beginPath(); ctx.moveTo(...pts[0]);
             pts.slice(1).forEach(p=>ctx.lineTo(...p)); ctx.stroke();
-          }
+          });
         }
       }
 
